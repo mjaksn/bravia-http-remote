@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bravia Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='14' height='9' rx='1.5' fill='%2335e08b'/%3E%3Crect x='5' y='13' width='6' height='1.5' rx='.75' fill='%2335e08b'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div class="brand-text">
+      <h1>Bravia Console</h1>
+      <p id="tv-ident" class="mono">no display configured</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span id="conn-pill" class="pill pill-off" role="status">OFFLINE</span>
+    <button id="btn-refresh" class="ghost-btn" title="Refresh state now" aria-label="Refresh now">&#8635; Refresh</button>
+    <button id="btn-settings" class="ghost-btn" title="Open settings" aria-label="Settings">&#9881; Settings</button>
+  </div>
+</header>
+
+<div id="banner" hidden></div>
+
+<main id="cards">
+
+  <section class="card" id="card-power" hidden>
+    <header class="card-head"><h2>Power</h2><span class="card-sub mono" id="power-sub"></span></header>
+    <div class="card-body" id="power-body"></div>
+  </section>
+
+  <section class="card" id="card-playing" hidden>
+    <header class="card-head"><h2>On</h2><span class="card-sub mono" id="playing-sub"></span></header>
+    <div class="card-body" id="playing-body"></div>
+  </section>
+
+  <section class="card" id="card-volume" hidden>
+    <header class="card-head"><h2>Audio</h2><span class="card-sub mono" id="volume-sub"></span></header>
+    <div class="card-body" id="volume-body"></div>
+  </section>
+
+  <section class="card" id="card-inputs" hidden>
+    <header class="card-head"><h2>Inputs</h2><span class="card-sub mono" id="inputs-sub"></span></header>
+    <div class="card-body" id="inputs-body"></div>
+  </section>
+
+  <section class="card" id="card-apps" hidden>
+    <header class="card-head">
+      <h2>Apps</h2>
+      <div class="card-tools">
+        <input type="search" id="app-filter" class="mini-input" placeholder="filter apps&hellip;" aria-label="Filter apps">
+        <button class="ghost-btn danger-ghost" id="btn-terminate" title="Ask the TV to close all background apps">Close all</button>
+      </div>
+    </header>
+    <div class="card-body" id="apps-body"></div>
+  </section>
+
+  <section class="card" id="card-keys" hidden>
+    <header class="card-head"><h2>Remote Keys</h2><span class="card-sub mono" id="keys-sub"></span></header>
+    <div class="card-body" id="keys-body"></div>
+  </section>
+
+  <section class="card" id="card-text" hidden>
+    <header class="card-head"><h2>Text Entry</h2><span class="card-sub mono">on-screen field detected</span></header>
+    <div class="card-body" id="text-body">
+      <form id="text-form">
+        <input type="text" id="text-input" class="mini-input grow" placeholder="type here, send to the TV&hellip;" autocomplete="off">
+        <button type="submit" class="action-btn">Send</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="card" id="card-picture" hidden>
+    <header class="card-head"><h2>Picture</h2><span class="card-sub mono">video processing</span></header>
+    <div class="card-body" id="picture-body"></div>
+  </section>
+
+  <section class="card" id="card-sound" hidden>
+    <header class="card-head"><h2>Sound Modes</h2><span class="card-sub mono">audio processing</span></header>
+    <div class="card-body" id="sound-body"></div>
+  </section>
+
+  <section class="card" id="card-system" hidden>
+    <header class="card-head"><h2>System</h2><span class="card-sub mono">device details</span></header>
+    <div class="card-body" id="system-body"></div>
+  </section>
+
+  <section class="card" id="card-speaker" hidden>
+    <header class="card-head"><h2>Speaker Setup</h2><span class="card-sub mono">output routing</span></header>
+    <div class="card-body" id="speaker-body"></div>
+  </section>
+
+</main>
+
+<p id="empty-state">Open <button class="linklike" id="btn-settings-empty">Settings</button> to connect to your display.</p>
+
+<dialog id="settings-dialog">
+  <form method="dialog" id="settings-form">
+    <h2>Connection Settings</h2>
+    <p id="settings-error" class="settings-error" hidden></p>
+
+    <label for="cfg-host">Display hostname / IP address</label>
+    <input type="text" id="cfg-host" class="mono" placeholder="e.g. 192.168.1.50" autocomplete="off" spellcheck="false">
+    <p class="hint" id="proxy-hint">Leave blank when the page is served by the bundled proxy (<span class="mono">proxy.py</span> / <span class="mono">proxy.js</span>) &mdash; requests then go to this page&rsquo;s own origin.</p>
+
+    <label for="cfg-psk">Pre-shared key (X-Auth-PSK)</label>
+    <div class="psk-row">
+      <input type="password" id="cfg-psk" class="mono grow" autocomplete="off" spellcheck="false">
+      <button type="button" id="btn-psk-toggle" class="ghost-btn" aria-label="Show or hide key">show</button>
+    </div>
+    <p class="hint">Stored unencrypted in this browser&rsquo;s localStorage.</p>
+
+    <label for="cfg-interval">Refresh interval (seconds)</label>
+    <input type="number" id="cfg-interval" min="1" max="3600" step="1" value="5">
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-cfg-cancel" class="ghost-btn">Cancel</button>
+      <button type="submit" id="btn-cfg-save" class="action-btn">Save &amp; Connect</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
