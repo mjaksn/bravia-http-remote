@@ -1,10 +1,12 @@
 # Bravia Console
 
-A single-page web app for controlling a Sony Bravia TV / professional display over
+A single-page vanilla JS web app for controlling a Sony Bravia TV / professional display over
 your local network. It talks **directly to the TV** using the Bravia HTTP REST API
 (JSON-RPC over plain HTTP, no encryption) and authenticates with the
 **pre-shared key** (`X-Auth-PSK` header). No frameworks, no build step, no
 dependencies, just `index.html`, `style.css`, and `app.js`.
+
+![Alt text](content/screenshot.png)
 
 The UI is a status dashboard, not a picture of a remote: everything the TV reports
 is visible at once, and every supported action is one click away.
