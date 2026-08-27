@@ -37,9 +37,11 @@ run(async () => {
   ok('Esc cannot dismiss the lock', a.$('unlock-dialog').open);
   watchErrors(a);
   a.$('unlock-dialog').close();          // whatever route a close request takes
-  await sleep(300);
-  ok('a closed lock reopens itself', a.$('unlock-dialog').open,
-     'open=' + a.$('unlock-dialog').open + ' locked=' + a.read('locked'));
+  // Either the prompt comes straight back or the page reloads into a
+  // locked one. Both are the lock holding; waiting covers both.
+  const lockHeld = () => { const d = a.$('unlock-dialog'); return !!(d && d.open); };
+  await waitFor(lockHeld, 'the lock to come back after a close');
+  ok('a closed lock comes back', lockHeld(), 'locked=' + a.read('locked'));
   a.$('btn-settings').click();
   await sleep(100);
   ok('settings unreachable while locked', !a.$('settings-dialog').open);

@@ -1367,13 +1367,20 @@ function initUnlockDialog() {
   // still locked goes straight back to the prompt. attemptUnlock clears
   // `locked` before it closes the dialog, so a real unlock passes through.
   //
-  // Reopened from a later task rather than from inside the handler.
-  // showModal() called during the dialog's own close event does nothing on
-  // Chromium: it neither reopens the dialog nor throws, and the same call
-  // one task later works. Verified on the test matrix, where the direct
-  // version fails on every Chrome and this one passes.
+  // showModal() around a dialog's own close event is unreliable on
+  // Chromium: called from inside the handler it does nothing at all, and
+  // neither throws nor reopens, while a deferred call is honoured only
+  // most of the time. So the prompt is put back one task later and the
+  // result is checked, and if it did not take, the page reloads. Nothing
+  // decrypted outlives a reload, so what comes back is locked too, which
+  // is the only outcome that actually matters here.
   $('unlock-dialog').addEventListener('close', () => {
-    if (locked) setTimeout(openUnlock, 0);
+    if (!locked) return;
+    setTimeout(() => {
+      if (!locked) return;
+      if (!$('unlock-dialog').open) openUnlock();
+      if (!$('unlock-dialog').open) location.reload();
+    }, 0);
   });
 }
 
