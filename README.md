@@ -6,7 +6,12 @@ your local network. It talks **directly to the TV** using the Bravia HTTP REST A
 **pre-shared key** (`X-Auth-PSK` header). No frameworks, no build step, no
 dependencies, just static files you can open from disk.
 
-![Alt text](content/screenshot.png)
+![The console connected to an XBR-75X90CH: a dark multi-column dashboard whose
+cards cover power (powered on, with standby and reboot), the current input
+(HDMI 2), audio, seven external inputs with connected-device dots, an app
+filter, remote keys grouped by navigation, playback, channels and numbers,
+picture and sound settings as sliders and dropdowns, speaker routing, and
+system details.](content/screenshot.png)
 
 The UI is a status dashboard, not a picture of a remote: everything the TV reports
 is visible at once, and every supported action is one click away.
