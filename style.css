@@ -493,7 +493,7 @@ details.key-extra > summary:hover { color: var(--acc); }
 
 #text-form { display: flex; gap: 8px; }
 
-/* ── settings dialog ─────────────────────────────────────────────────── */
+/* ── dialogs (settings, unlock) ───────────────────────────────────────── */
 
 dialog {
   background: var(--bg-raise);
@@ -535,6 +535,9 @@ dialog input[type="text"], dialog input[type="password"], dialog input[type="num
   display: flex; justify-content: flex-end; gap: 10px;
   margin-top: 22px;
 }
+/* Logging out is not a sibling of Cancel and Save; keep it well away from
+   the button someone reaches for by muscle memory. */
+#btn-logout { margin-right: auto; }
 
 /* ── small screens ───────────────────────────────────────────────────── */
 

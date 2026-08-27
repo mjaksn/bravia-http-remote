@@ -7,11 +7,14 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 const LS_KEY = 'bravia-console-config';
+const LS_INTERVAL_KEY = 'bravia-console-interval';
 const RPC_TIMEOUT_MS = 8000;
 
 /* ── state ─────────────────────────────────────────────────────────── */
 
-let cfg = null;                 // {host, psk, interval}
+let cfg = null;                 // {host, interval}; the PSK is held separately
+let sealedCfg = null;           // sealed blob from deploy-config.js, if deployed
+let locked = false;             // sealed config present and not yet opened
 let proxyDetected = false;      // page served by bundled proxy.js
 let apiMap = null;              // {service: {method: Set(versions)}} from discovery
 let unsupported = new Set();    // "service.method" learned from errors 12/14/501
@@ -31,12 +34,60 @@ let rpcId = 1;
 
 const $ = (id) => document.getElementById(id);
 
+/* ── the pre-shared key in memory ──────────────────────────────────── */
+
+/* The key is never held as a readable string. It sits XORed under a mask
+   minted fresh on every page load, and is unmasked only for the moment a
+   request needs it. This is obfuscation and nothing more: any script
+   running in this page can undo it. What it buys is that the key is not
+   sitting in plain sight in a heap snapshot, a logged copy of cfg, or a
+   devtools scope view of an idle tab. */
+let pskMasked = null;           // Uint8Array of key XOR mask
+let pskMask = null;             // Uint8Array, same length, per page load
+
+function setPsk(str) {
+  clearPsk();
+  const bytes = new TextEncoder().encode(str || '');
+  const mask = new Uint8Array(bytes.length);
+  crypto.getRandomValues(mask);
+  for (let i = 0; i < bytes.length; i++) bytes[i] ^= mask[i];
+  pskMasked = bytes;
+  pskMask = mask;
+}
+
+function getPsk() {
+  if (!pskMasked) return '';
+  const out = new Uint8Array(pskMasked.length);
+  for (let i = 0; i < out.length; i++) out[i] = pskMasked[i] ^ pskMask[i];
+  return new TextDecoder().decode(out);
+}
+
+function clearPsk() {
+  if (pskMasked) pskMasked.fill(0);
+  if (pskMask) pskMask.fill(0);
+  pskMasked = pskMask = null;
+}
+
 /* ── config persistence ────────────────────────────────────────────── */
 
 function loadCfg() {
   try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch { return null; }
 }
-function saveCfg(c) { localStorage.setItem(LS_KEY, JSON.stringify(c)); }
+
+/* Only ever called for a hand-entered config. A deployed build keeps the
+   address and key in memory alone, so that closing the tab is enough to
+   put them back behind the password. */
+function saveCfg(c) {
+  localStorage.setItem(LS_KEY, JSON.stringify({ ...c, psk: getPsk() }));
+}
+
+/* The refresh interval is a preference, not a secret, so it is the one
+   thing a deployed build does remember between visits. */
+function loadStoredInterval() {
+  const n = parseInt(localStorage.getItem(LS_INTERVAL_KEY), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function saveStoredInterval(n) { localStorage.setItem(LS_INTERVAL_KEY, String(n)); }
 
 function apiBase() {
   if (proxyDetected || !cfg.host) return '';
@@ -81,7 +132,7 @@ async function braviaFetch(path, headers, body) {
 /* One JSON-RPC attempt at a specific version; no capability bookkeeping. */
 async function rpcRaw(service, method, params, version) {
   const res = await braviaFetch('/sony/' + service,
-    { 'X-Auth-PSK': cfg.psk, 'Content-Type': 'application/json' },
+    { 'X-Auth-PSK': getPsk(), 'Content-Type': 'application/json' },
     JSON.stringify({ method, params, version, id: rpcId++ }));
   const json = await res.json();
   if (json.error) {
@@ -137,7 +188,7 @@ async function sendIrcc(code) {
     '<IRCCCode>' + code + '</IRCCCode>' +
     '</u:X_SendIRCC></s:Body></s:Envelope>';
   await braviaFetch('/sony/ircc', {
-    'X-Auth-PSK': cfg.psk,
+    'X-Auth-PSK': getPsk(),
     'Content-Type': 'text/xml; charset=UTF-8',
     'SOAPAction': '"urn:schemas-sony-com:service:IRCC:1#X_SendIRCC"',
   }, body);
@@ -211,8 +262,7 @@ async function connect() {
     if (my !== epoch) return;   // a newer connect took over while we waited
     if (e.kind === 'auth') {
       setPill('err', 'AUTH FAILED');
-      openSettings('The display rejected the pre-shared key. Check the PSK and that ' +
-        'authentication is set to "Normal and Pre-Shared Key" on the TV.');
+      openSettings(authFailureText());
       return;
     }
     if (e.kind === 'network') {
@@ -291,6 +341,9 @@ function stopPolling() {
 
 async function pollOnce(force = false) {
   const my = epoch;
+  // Nothing to poll before there is a config: returning to a tab that is
+  // still at the settings or password prompt must not paint a failure.
+  if (!cfg) return;
   if (document.hidden && !force) return;
   // Skip only if a poll for THIS session is already running; a stale poll
   // from an older epoch must not block (its writes are discarded anyway).
@@ -302,7 +355,7 @@ async function pollOnce(force = false) {
       status = (await rpc('system', 'getPowerStatus', []))[0].status;
     } catch (e) {
       if (my !== epoch) return;
-      if (e.kind === 'auth') { setPill('err', 'AUTH FAILED'); stopPolling(); openSettings('Pre-shared key was rejected.'); return; }
+      if (e.kind === 'auth') { setPill('err', 'AUTH FAILED'); stopPolling(); openSettings(authFailureText()); return; }
       setPill('err', 'UNREACHABLE');
       return;
     }
@@ -1140,15 +1193,43 @@ function initCollapsibleCards() {
 
 /* ── settings dialog ───────────────────────────────────────────────── */
 
+/* True when this copy of the app was deployed with a sealed config, in
+   which case the address and key come from the password prompt and are
+   not the user's to edit. */
+const deployed = () => !!sealedCfg;
+
+function authFailureText() {
+  return deployed()
+    ? 'The display rejected the pre-shared key held in this deployment. The key is ' +
+      'wrong, or the TV is no longer set to "Normal and Pre-Shared Key". Whoever ' +
+      'packaged this page has to repackage it.'
+    : 'The display rejected the pre-shared key. Check the PSK and that ' +
+      'authentication is set to "Normal and Pre-Shared Key" on the TV.';
+}
+
 function openSettings(errorMsg) {
+  // Nothing is settable from behind the lock, and the dialog assumes a
+  // config that does not exist yet.
+  if (locked) return;
   const dlg = $('settings-dialog');
-  $('cfg-host').value = cfg?.host || '';
-  $('cfg-psk').value = cfg?.psk || '';
+  // A deployed build shows the interval and nothing else: there is no
+  // point offering fields whose values it will not keep, and echoing the
+  // key back into a text box would undo the point of sealing it.
+  $('settings-connection').hidden = deployed();
+  $('deploy-note').hidden = !deployed();
+  $('btn-logout').hidden = !deployed();
+  // Nothing to reconnect when the interval is all that can change.
+  $('btn-cfg-save').textContent = deployed() ? 'Save' : 'Save & Connect';
+  if (!deployed()) {
+    $('cfg-host').value = cfg?.host || '';
+    $('cfg-psk').value = getPsk();
+    $('proxy-hint').textContent = proxyDetected
+      ? 'Bundled proxy detected, so requests are routed through this page’s own ' +
+        'origin and the address here is informational.'
+      : $('proxy-hint').textContent;
+  }
   $('cfg-interval').value = cfg?.interval || 5;
   $('btn-cfg-cancel').disabled = !cfg;
-  $('proxy-hint').textContent = proxyDetected
-    ? 'Bundled proxy detected; requests are routed through this page’s origin, so the address here is informational.'
-    : $('proxy-hint').textContent;
   const err = $('settings-error');
   if (errorMsg) { err.textContent = errorMsg; err.hidden = false; }
   else err.hidden = true;
@@ -1157,9 +1238,15 @@ function openSettings(errorMsg) {
 
 function initSettingsDialog() {
   $('settings-form').addEventListener('submit', (e) => {
-    const host = $('cfg-host').value.trim();
-    const psk = $('cfg-psk').value;
     const interval = Math.max(1, parseInt($('cfg-interval').value, 10) || 5);
+    if (deployed()) {
+      // Nothing to reconnect for: only the poll cadence can have changed.
+      if (cfg) cfg.interval = interval;
+      saveStoredInterval(interval);
+      if (pollTimer) startPolling();
+      return;
+    }
+    const host = $('cfg-host').value.trim();
     if (!host && !proxyDetected) {
       e.preventDefault();
       const err = $('settings-error');
@@ -1167,11 +1254,13 @@ function initSettingsDialog() {
       err.hidden = false;
       return;
     }
-    cfg = { host, psk, interval };
+    setPsk($('cfg-psk').value);
+    cfg = { host, interval };
     saveCfg(cfg);
     connect();
   });
   $('btn-cfg-cancel').onclick = () => $('settings-dialog').close();
+  $('btn-logout').onclick = logout;
   $('btn-psk-toggle').onclick = () => {
     const inp = $('cfg-psk');
     inp.type = inp.type === 'password' ? 'text' : 'password';
@@ -1179,6 +1268,99 @@ function initSettingsDialog() {
   };
   // A dialog with no config yet must not be dismissible via Esc.
   $('settings-dialog').addEventListener('cancel', (e) => { if (!cfg) e.preventDefault(); });
+}
+
+/* ── sealed deployment config ──────────────────────────────────────── */
+
+/* Reloading is the whole logout: nothing decrypted was written anywhere
+   that survives it, so the fresh page comes up locked again. The wipes
+   below only shorten the window before that happens. */
+function logout() {
+  stopPolling();
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  epoch++;
+  clearPsk();
+  cfg = null;
+  $('unlock-password').value = '';
+  $('cfg-psk').value = '';
+  location.reload();
+}
+
+function openUnlock(errorMsg) {
+  const dlg = $('unlock-dialog');
+  const err = $('unlock-error');
+  if (errorMsg) { err.textContent = errorMsg; err.hidden = false; }
+  else err.hidden = true;
+  if (!dlg.open) dlg.showModal();
+  $('unlock-password').focus();
+}
+
+/* Stretching the password takes a beat, so let the "Checking" state
+   reach the screen before the main thread disappears into the KDF.
+   Raced against a timer because a page that is not being painted (a
+   hidden tab, a restored session) never runs the frame callback, and an
+   unlock that waits for a frame that is never coming is worse than one
+   that skips the repaint. */
+function paintPause() {
+  return new Promise(resolve => {
+    let done = false;
+    const go = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(() => setTimeout(go, 0));
+    setTimeout(go, 60);
+  });
+}
+
+async function attemptUnlock() {
+  const btn = $('btn-unlock');
+  const input = $('unlock-password');
+  const password = input.value;
+  if (!password) { openUnlock('Enter the password for this deployment.'); return; }
+
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = 'Checking…';
+  $('unlock-error').hidden = true;
+  await paintPause();
+
+  let secret = null;
+  try {
+    secret = Lockbox.open(password, sealedCfg);
+  } catch {
+    // A wrong password and an unreadable file read the same from out
+    // here, deliberately: the difference helps nobody but a guesser.
+    btn.disabled = false;
+    btn.textContent = label;
+    input.value = '';
+    openUnlock('Access denied.');
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = label;
+  input.value = '';
+  setPsk(secret.psk || '');
+  // A locally chosen interval outranks the packaged one: it is the one
+  // setting this mode still lets the user own.
+  cfg = {
+    host: String(secret.host || ''),
+    interval: Math.max(1, loadStoredInterval() || parseInt(secret.interval, 10) || 5),
+  };
+  locked = false;
+  $('unlock-dialog').close();
+  $('empty-state').hidden = true;
+  connect();
+}
+
+function initUnlockDialog() {
+  $('unlock-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    attemptUnlock();
+  });
+  // Locked is the resting state of a deployed build; Esc cannot leave it.
+  $('unlock-dialog').addEventListener('cancel', (e) => { if (locked) e.preventDefault(); });
+  // Belt and braces: whatever route a close request took, a build that is
+  // still locked goes straight back to the prompt. attemptUnlock clears
+  // `locked` before it closes the dialog, so a real unlock passes through.
+  $('unlock-dialog').addEventListener('close', () => { if (locked) openUnlock(); });
 }
 
 /* ── boot ──────────────────────────────────────────────────────────── */
@@ -1196,7 +1378,21 @@ async function detectProxy() {
 }
 
 async function main() {
+  // Settle what kind of build this is before anything can await. Probing
+  // for the proxy takes a moment, and a click on Settings during it would
+  // otherwise be answered as though the build were an ordinary one, which
+  // is the one thing the lock exists to prevent.
+  //
+  // deploy-config.js is optional: without it, or with the placeholder the
+  // repo ships, this is the ordinary app that asks for an address and a
+  // key and remembers them.
+  sealedCfg = (typeof window.BRAVIA_DEPLOY_CONFIG === 'object' && window.BRAVIA_DEPLOY_CONFIG)
+    ? window.BRAVIA_DEPLOY_CONFIG : null;
+  locked = deployed();
+  if (locked) $('empty-state').hidden = true;
+
   initSettingsDialog();
+  initUnlockDialog();
   initCollapsibleCards();
   $('btn-settings').onclick = () => openSettings();
   $('btn-settings-empty').onclick = () => openSettings();
@@ -1213,8 +1409,19 @@ async function main() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pollOnce(); });
 
   proxyDetected = await detectProxy();
-  cfg = loadCfg();
-  if (cfg) {
+
+  if (deployed()) {
+    // Drop anything an earlier, unsealed use of this browser left behind,
+    // so that a deployed page really does hold nothing between visits.
+    localStorage.removeItem(LS_KEY);
+    openUnlock();
+    return;
+  }
+
+  const stored = loadCfg();
+  if (stored) {
+    setPsk(stored.psk);
+    cfg = { host: stored.host, interval: stored.interval };
     $('empty-state').hidden = true;
     connect();
   } else {

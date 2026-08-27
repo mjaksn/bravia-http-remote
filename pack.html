@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bravia Console &middot; Pack deployment config</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='14' height='9' rx='1.5' fill='%2335e08b'/%3E%3Crect x='5' y='13' width='6' height='1.5' rx='.75' fill='%2335e08b'/%3E%3C/svg%3E">
+<style>
+  /* This page is a one-off tool rather than part of the console, so its
+     few layout rules live here instead of in style.css. */
+  #pack { max-width: 620px; margin: 0 auto; padding: 22px 22px 60px; }
+  #pack label {
+    display: block;
+    margin: 16px 0 5px;
+    font-family: var(--mono);
+    font-size: 11px; letter-spacing: .07em;
+    color: var(--ink-dim);
+  }
+  #pack input[type="text"], #pack input[type="password"], #pack input[type="number"] { width: 100%; }
+  #pack .psk-row input { width: auto; }
+  #pack p { line-height: 1.55; }
+  #pack .lede { color: var(--ink-dim); font-size: 14px; }
+  #pack textarea {
+    width: 100%; height: 260px;
+    margin-top: 10px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.5;
+    color: var(--ink);
+    background: var(--bg-raise2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    resize: vertical;
+  }
+  #pack-out { margin-top: 26px; }
+  .pack-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div class="brand-text">
+      <h1>Pack Deployment Config</h1>
+      <p class="mono">bravia console</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <a class="ghost-btn" href="index.html">&#8592; Console</a>
+  </div>
+</header>
+
+<main id="pack">
+
+  <p class="lede">Seals a display address and pre-shared key into
+    <span class="mono">deploy-config.js</span>. Drop that file next to
+    <span class="mono">index.html</span> and the console starts locked: it asks for the
+    password below instead of asking each person for the address and the key.</p>
+
+  <p class="lede">Everything happens in this page. Nothing is uploaded, and nothing is
+    written anywhere until you save the file yourself.</p>
+
+  <form id="pack-form">
+    <label for="pk-host">Display hostname / IP address</label>
+    <input type="text" id="pk-host" class="mono" placeholder="e.g. 192.168.1.50" autocomplete="off" spellcheck="false">
+    <p class="hint">Leave blank if the deployed page will be served by the bundled proxy, which
+      answers on its own origin.</p>
+
+    <label for="pk-psk">Pre-shared key (X-Auth-PSK)</label>
+    <div class="psk-row">
+      <input type="password" id="pk-psk" class="mono grow" autocomplete="off" spellcheck="false">
+      <button type="button" id="pk-psk-toggle" class="ghost-btn" aria-label="Show or hide key">show</button>
+    </div>
+
+    <label for="pk-interval">Refresh interval (seconds)</label>
+    <input type="number" id="pk-interval" min="1" max="3600" step="1" value="5">
+    <p class="hint">A starting value. Each browser can change it afterwards, and remembers its own.</p>
+
+    <label for="pk-password">Password</label>
+    <input type="password" id="pk-password" autocomplete="new-password" spellcheck="false">
+
+    <label for="pk-password2">Password again</label>
+    <input type="password" id="pk-password2" autocomplete="new-password" spellcheck="false">
+    <p class="hint">Anyone who can load the page can also take a copy of the sealed file and
+      guess at it offline, so pick a password worth guessing at. There is no way to recover
+      the contents if it is forgotten; repack instead.</p>
+
+    <p id="pack-error" class="settings-error" hidden></p>
+
+    <div class="pack-actions">
+      <button type="submit" id="btn-pack" class="action-btn">Seal</button>
+    </div>
+  </form>
+
+  <section id="pack-out" hidden>
+    <h2 class="mono" style="font-size:12px;letter-spacing:.08em;color:var(--ink-dim);">deploy-config.js</h2>
+    <p class="hint">Verified: this page opened the sealed file again with the password you typed.</p>
+    <textarea id="pack-text" readonly spellcheck="false"></textarea>
+    <div class="pack-actions">
+      <button type="button" id="btn-pack-download" class="action-btn">Download</button>
+      <button type="button" id="btn-pack-copy" class="ghost-btn">Copy</button>
+    </div>
+  </section>
+
+</main>
+
+<div id="toasts" aria-live="polite"></div>
+
+<script src="lockbox.js"></script>
+<script>
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+
+const HEADER =
+  '/* Bravia Console deployment config, written by pack.html.\n' +
+  '   The address and pre-shared key inside are encrypted with a password;\n' +
+  '   the console asks for it at launch. Repack to change any of them. */\n\n';
+
+function fail(msg) {
+  const err = $('pack-error');
+  err.textContent = msg;
+  err.hidden = false;
+  $('pack-out').hidden = true;
+}
+
+/* Let the button repaint before the key derivation takes the thread,
+   but never wait on a frame that a hidden tab will not produce. */
+function paintPause() {
+  return new Promise(resolve => {
+    let done = false;
+    const go = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(() => setTimeout(go, 0));
+    setTimeout(go, 60);
+  });
+}
+
+$('pk-psk-toggle').onclick = () => {
+  const inp = $('pk-psk');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  $('pk-psk-toggle').textContent = inp.type === 'password' ? 'show' : 'hide';
+};
+
+$('pack-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const host = $('pk-host').value.trim();
+  const psk = $('pk-psk').value;
+  const interval = Math.max(1, parseInt($('pk-interval').value, 10) || 5);
+  const password = $('pk-password').value;
+
+  if (!psk) return fail('Enter the pre-shared key the display expects.');
+  if (!password) return fail('Enter a password.');
+  if (password !== $('pk-password2').value) return fail('The two passwords do not match.');
+
+  $('pack-error').hidden = true;
+  const btn = $('btn-pack');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Sealing…';
+  await paintPause();
+
+  try {
+    const secret = { host, psk, interval };
+    const blob = Lockbox.seal(password, secret);
+    // Open it again before handing it over: a file nobody can open is
+    // worse than no file, and this is the only chance to notice.
+    const check = Lockbox.open(password, blob);
+    if (JSON.stringify(check) !== JSON.stringify(secret)) {
+      return fail('Self-check failed: the sealed file did not open back to what went in. ' +
+        'Do not deploy it.');
+    }
+    $('pack-text').value =
+      HEADER + 'window.BRAVIA_DEPLOY_CONFIG = ' + JSON.stringify(blob, null, 2) + ';\n';
+    $('pack-out').hidden = false;
+    $('pack-out').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    fail('Could not seal the configuration: ' + (err && err.message ? err.message : err));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
+
+$('btn-pack-download').onclick = () => {
+  const blob = new Blob([$('pack-text').value], { type: 'text/javascript' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'deploy-config.js';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+$('btn-pack-copy').onclick = async () => {
+  const text = $('pack-text').value;
+  try {
+    await navigator.clipboard.writeText(text);
+    $('btn-pack-copy').textContent = 'Copied';
+  } catch {
+    // Clipboard access is refused on some origins; selecting is the fallback.
+    $('pack-text').select();
+    $('btn-pack-copy').textContent = 'Press Ctrl+C';
+  }
+  setTimeout(() => { $('btn-pack-copy').textContent = 'Copy'; }, 2000);
+};
+</script>
+</body>
+</html>
