@@ -1,7 +1,7 @@
 'use strict';
 
 /* ═══════════════════════════════════════════════════════════════════════
-   Bravia Console — single-page controller for Sony Bravia displays.
+   Bravia Console: single-page controller for Sony Bravia displays.
    Talks JSON-RPC over HTTP to http://<host>/sony/<service> with the
    X-Auth-PSK pre-shared-key header. No build step, no dependencies.
    ═══════════════════════════════════════════════════════════════════════ */
@@ -223,8 +223,8 @@ async function connect() {
         : 'Could not reach the display at ' + (apiBase() || 'this page’s origin') + '.\n' +
           '• If the TV is on and the address is right, the browser probably blocked the ' +
           'cross-origin request (Bravia displays don’t answer CORS preflights).\n' +
-          '• Fix: serve this app through the bundled proxy — python proxy.py <tv-ip> or ' +
-          'node proxy.js <tv-ip> — and open http://localhost:8585, or launch a browser ' +
+          '• Fix: serve this app through the bundled proxy (python proxy.py <tv-ip> or ' +
+          'node proxy.js <tv-ip>) and open http://localhost:8585, or launch a browser ' +
           'with web security disabled. See README.md.');
       $('empty-state').hidden = true;
       retryTimer = setTimeout(connect, Math.max(5, cfg.interval) * 1000);
@@ -401,7 +401,7 @@ function guard(promise, okMsg) {
       // rpc() has already recorded unsupported codes (12/14/501, HTTP or
       // JSON-RPC) in the `unsupported` set, so the re-poll below hides them.
       if (isUnsupportedCode(e.code)) {
-        toast('This display does not support that operation — control hidden.');
+        toast('This display does not support that operation; control hidden.');
         pollOnce(true);
       } else {
         toast(e.message || 'Command failed');
@@ -472,7 +472,7 @@ function buildPowerControls(main) {
   main.appendChild(row);
 }
 
-/* Value-only update — safe to run while the user is focused in the card. */
+/* Value-only update, safe to run while the user is focused in the card. */
 function paintPowerState(main) {
   const on = powerState === 'active';
   const lamp = main.querySelector('.power-lamp');
@@ -501,7 +501,7 @@ const POWER_SAVE_MODES = ['off', 'low', 'high', 'pictureOff'];
 const LED_MODES = ['Demo', 'AutoBrightnessAdjust', 'Dark', 'SimpleResponse', 'Off'];
 
 /* Fetched only from refreshSettingsCards (connect / wake / manual refresh /
-   after an edit) — never per poll tick. */
+   after an edit), never per poll tick. */
 async function loadPowerExtras() {
   const my = epoch;
   const rows = [];
@@ -510,7 +510,7 @@ async function loadPowerExtras() {
       const mode = (await rpc('system', 'getPowerSavingMode', []))[0].mode;
       rows.push(fieldRow('power saving', makeSelect(POWER_SAVE_MODES, mode, v =>
         guard(rpc('system', 'setPowerSavingMode', [{ mode: v }]), 'Power saving: ' + v))));
-    } catch { /* unavailable right now — row omitted */ }
+    } catch { /* unavailable right now, row omitted */ }
   }
   if (supports('system', 'getLEDIndicatorStatus') && supports('system', 'setLEDIndicatorStatus')) {
     try {
@@ -518,7 +518,7 @@ async function loadPowerExtras() {
       rows.push(fieldRow('led indicator', makeSelect(LED_MODES, led.mode, v =>
         guard(rpc('system', 'setLEDIndicatorStatus', [{ mode: v, status: 'true' }]),
           'LED mode: ' + v))));
-    } catch { /* unavailable right now — row omitted */ }
+    } catch { /* unavailable right now, row omitted */ }
   }
   if (my !== epoch) return;
   const extras = $('power-extras');    // fresh lookup: never a detached node
@@ -550,7 +550,7 @@ function renderPlaying(info) {
   $('playing-sub').textContent = 'avContent.getPlayingContentInfo';
 
   if (!info) {
-    body.innerHTML = '<p class="play-meta">No playing-content details — the display is showing ' +
+    body.innerHTML = '<p class="play-meta">No playing-content details; the display is showing ' +
       'an app or the home screen.</p>';
     return;
   }
@@ -613,7 +613,7 @@ function renderVolume(targets) {
   const body = $('volume-body');
 
   // While the user is on any control in this card (slider mid-drag, +/− or
-  // mute button focused), update values in place instead of rebuilding —
+  // mute button focused), update values in place instead of rebuilding:
   // a rebuild would destroy the element they're interacting with.
   if (interacting(body)) {
     const rows = body.querySelectorAll('.vol-row');
@@ -650,7 +650,7 @@ function renderVolume(targets) {
       const mute = document.createElement('button');
       mute.className = 'ghost-btn mute-btn' + (t.mute ? ' muted' : '');
       mute.textContent = t.mute ? 'muted' : 'mute';
-      // Read the displayed state at click time — soft updates may have
+      // Read the displayed state at click time, since soft updates may have
       // changed it since this row was built.
       mute.onclick = () => guard(rpc('audio', 'setAudioMute',
         [{ status: !mute.classList.contains('muted') }]));
@@ -783,7 +783,7 @@ function buildInputGrid(body, inputs) {
   body.appendChild(grid);
 }
 
-/* Value-only update — safe while a tile holds focus. */
+/* Value-only update, safe while a tile holds focus. */
 function paintInputs(body, inputs) {
   const byUri = new Map(inputs.map(i => [i.uri || '', i]));
   for (const tile of body.querySelectorAll('.input-tile')) {
@@ -1011,7 +1011,7 @@ function buildSettingRows(body, items, service, getter, setter, cardId, bodyId) 
 
     const cands = (item.candidate || []).filter(c => c.isAvailable !== false);
     const numeric = cands.length && cands[0].value == null && cands[0].max != null;
-    // Re-fetch only this card after an edit — nudge() already refreshes the
+    // Re-fetch only this card after an edit: nudge() already refreshes the
     // fast-moving state, and refetching every settings card was ~10 RPCs.
     const apply = (value) => guard(
       rpc(service, setter, [{ settings: [{ target: item.target, value: String(value) }] }]),
@@ -1042,7 +1042,7 @@ function buildSettingRows(body, items, service, getter, setter, cardId, bodyId) 
   }
 }
 
-/* Value-only update — never touches the control the user is currently on. */
+/* Value-only update; it never touches the control the user is currently on. */
 function paintSettingRows(body, items) {
   const byTarget = new Map(items.map(i => [i.target || '', i]));
   for (const row of body.querySelectorAll('.setting-row')) {
@@ -1130,7 +1130,7 @@ function initCollapsibleCards() {
 
     head.addEventListener('click', (e) => {
       // The whole header toggles, except the header's own working controls
-      // (apps filter box, "Close all", …) — those keep their normal job.
+      // (apps filter box, "Close all", …); those keep their normal job.
       const hit = e.target.closest('button, input, select, a');
       if (hit && hit !== btn) return;
       apply(!card.classList.contains('collapsed'), true);
@@ -1147,7 +1147,7 @@ function openSettings(errorMsg) {
   $('cfg-interval').value = cfg?.interval || 5;
   $('btn-cfg-cancel').disabled = !cfg;
   $('proxy-hint').textContent = proxyDetected
-    ? 'Bundled proxy detected — requests are routed through this page’s origin, so the address here is informational.'
+    ? 'Bundled proxy detected; requests are routed through this page’s origin, so the address here is informational.'
     : $('proxy-hint').textContent;
   const err = $('settings-error');
   if (errorMsg) { err.textContent = errorMsg; err.hidden = false; }

@@ -14,7 +14,7 @@
  *          → open http://localhost:8585
  *
  * Defaults: port 8585, bound to 127.0.0.1 (this machine only).
- * Bind to 0.0.0.0 to reach the app from other devices on your LAN —
+ * Bind to 0.0.0.0 to reach the app from other devices on your LAN, but
  * note anyone who can reach the port can then control the TV.
  */
 
@@ -55,7 +55,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.startsWith('/sony/')) {
-    // Buffer the body so the forwarded request carries Content-Length —
+    // Buffer the body so the forwarded request carries Content-Length:
     // embedded Bravia HTTP stacks may reject chunked request bodies.
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static files — no directory traversal.
+  // Static files, no directory traversal.
   const rel = url === '/' ? 'index.html' : url.slice(1);
   const file = path.join(root, path.normalize(rel));
   if (!file.startsWith(root) || rel.includes('..')) {
