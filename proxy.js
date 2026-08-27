@@ -4,12 +4,12 @@
 /*
  * Optional zero-dependency helper for Bravia Console.
  *
- * Browsers block direct cross-origin requests to the TV because Bravia
- * displays never answer CORS preflights. This script serves the app's
- * static files AND forwards /sony/* requests to the TV, so everything
- * becomes same-origin and works in any unmodified browser.
+ * Many Bravia displays never answer CORS preflights, and a browser then
+ * blocks every direct request the app makes to the TV. This script serves
+ * the app's static files AND forwards /sony/* requests to the TV, so
+ * everything becomes same-origin and works in any unmodified browser.
  *
- * Usage:   node proxy.js <tv-host> [port] [bind-address]
+ * Usage:   node proxy.js <tv-host[:port]> [port] [bind-address]
  * Example: node proxy.js 192.168.1.50
  *          → open http://localhost:8585
  *

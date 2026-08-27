@@ -32,14 +32,15 @@ is visible at once, and every supported action is one click away.
   unsupported controls. Anything that only fails at runtime is hidden the moment
   the TV reports "no such method". Controls that exist but are unavailable in
   standby are shown dimmed with an "unavailable in standby" tag.
-
 - **Locked deployments**: ship the app with the address and key already in it,
   sealed under a password, so that a browser that has never been given the
   password cannot read either one. See
   [Deploying a locked copy](#deploying-a-locked-copy).
 
 State is polled on a configurable interval; the settings dialog (first launch, or
-the ⚙ button) asks for hostname/IP, pre-shared key, and refresh interval.
+the ⚙ button) asks for hostname/IP, pre-shared key, and refresh interval. A copy
+deployed with a locked configuration asks for its password at first launch
+instead, and its settings dialog offers the refresh interval alone.
 
 ## TV-side setup (one time)
 
@@ -212,9 +213,13 @@ served over plain `http://` on a LAN, exactly where it would be missing.
 | Service      | Methods                                                                 |
 |--------------|-------------------------------------------------------------------------|
 | `guide`      | `getSupportedApiInfo`                                                    |
-| `system`     | `getSystemInformation`, `getPowerStatus`, `setPowerStatus`, `requestReboot`, `getPowerSavingMode`, `setPowerSavingMode`, `getLEDIndicatorStatus`, `setLEDIndicatorStatus`, `getRemoteControllerInfo`, `getMethodTypes` |
+| `system`     | `getSystemInformation`, `getPowerStatus`, `setPowerStatus`, `requestReboot`, `getPowerSavingMode`, `setPowerSavingMode`, `getLEDIndicatorStatus`, `setLEDIndicatorStatus`, `getRemoteControllerInfo` |
 | `audio`      | `getVolumeInformation`, `setAudioVolume`, `setAudioMute`, `getSoundSettings`, `setSoundSettings`, `getSpeakerSettings`, `setSpeakerSettings` |
 | `avContent`  | `getPlayingContentInfo`, `getCurrentExternalInputsStatus`, `setPlayContent` |
 | `appControl` | `getApplicationList`, `getApplicationStatusList`, `setActiveApp`, `terminateApps`, `setTextForm` |
 | `video`      | `getPictureQualitySettings`, `setPictureQualitySettings`                 |
 | `ircc` (SOAP)| `X_SendIRCC` for remote key codes                                        |
+
+When a display does not offer `guide.getSupportedApiInfo`, capability discovery
+falls back to `getMethodTypes`, which is probed on every service in the table
+above and on `videoScreen`.

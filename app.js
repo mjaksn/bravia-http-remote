@@ -272,10 +272,10 @@ async function connect() {
           'network, and that the proxy was started with the right address.'
         : 'Could not reach the display at ' + (apiBase() || 'this page’s origin') + '.\n' +
           '• If the TV is on and the address is right, the browser probably blocked the ' +
-          'cross-origin request (Bravia displays don’t answer CORS preflights).\n' +
+          'cross-origin request (many Bravia displays never answer CORS preflights).\n' +
           '• Fix: serve this app through the bundled proxy (python proxy.py <tv-ip> or ' +
-          'node proxy.js <tv-ip>) and open http://localhost:8585, or launch a browser ' +
-          'with web security disabled. See README.md.');
+          'node proxy.js <tv-ip>) and open http://localhost:8585; see README.md. ' +
+          'Failing that, launch a browser with web security disabled.');
       $('empty-state').hidden = true;
       retryTimer = setTimeout(connect, Math.max(5, cfg.interval) * 1000);
       return;
@@ -1250,7 +1250,7 @@ function initSettingsDialog() {
     if (!host && !proxyDetected) {
       e.preventDefault();
       const err = $('settings-error');
-      err.textContent = 'Enter the display’s hostname or IP address (or serve the app via proxy.js).';
+      err.textContent = 'Enter the display’s hostname or IP address (or serve the app through the bundled proxy).';
       err.hidden = false;
       return;
     }

@@ -9,7 +9,7 @@
   --ink: #e8efe9;
   --ink-dim: #8fa094;
   --ink-faint: #5c6a60;
-  --acc: #35e08b;          /* signal green  – on/active   */
+  --acc: #35e08b;          /* signal green: on/active     */
   --acc-dim: #1d7a4e;
   --amber: #f5b944;        /* standby                     */
   --red: #ff5d5d;          /* fault                       */
