@@ -1,0 +1,29 @@
+{
+  "name": "bravia-console",
+  "version": "1.0.0",
+  "description": "Single-page controller for Sony Bravia displays over the Bravia HTTP REST API",
+  "license": "MIT",
+  "homepage": "https://github.com/mjaksn/bravia-http-remote",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mjaksn/bravia-http-remote.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mjaksn/bravia-http-remote/issues"
+  },
+  "author": "mjaksn",
+  "keywords": [
+    "bravia",
+    "sony",
+    "remote-control",
+    "ircc",
+    "vanilla-js"
+  ],
+  "private": true,
+  "scripts": {
+    "lint": "node tests/lint.js",
+    "test:unit": "node tests/lockbox.test.js",
+    "test:browser": "node tests/run-browser.js",
+    "test": "npm run lint && npm run test:unit && npm run test:browser"
+  }
+}

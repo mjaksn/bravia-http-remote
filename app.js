@@ -6,6 +6,11 @@
    X-Auth-PSK pre-shared-key header. No build step, no dependencies.
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* Kept equal to `version` in package.json, and to the tag a release is cut
+   from. tests/lint.js fails a pull request where the two disagree, and the
+   release workflow refuses a tag that disagrees with either. */
+const APP_VERSION = '1.0.0';
+
 const LS_KEY = 'bravia-console-config';
 const LS_INTERVAL_KEY = 'bravia-console-interval';
 const RPC_TIMEOUT_MS = 8000;
@@ -1259,6 +1264,7 @@ function initSettingsDialog() {
     saveCfg(cfg);
     connect();
   });
+  $('app-version').textContent = 'Bravia Console ' + APP_VERSION;
   $('btn-cfg-cancel').onclick = () => $('settings-dialog').close();
   $('btn-logout').onclick = logout;
   $('btn-psk-toggle').onclick = () => {
