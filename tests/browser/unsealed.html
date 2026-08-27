@@ -66,7 +66,7 @@ run(async () => {
   /* ── the packer ───────────────────────────────────────────────────── */
   const p = app(document.getElementById('packer'));
   p.load('/pack.html');
-  await waitFor(() => p.$('pack-form'), 'pack.html');
+  await waitFor(() => p.loaded() && p.$('pack-form'), 'pack.html');
 
   p.$('pk-psk').value = 'packed-key';
   p.$('pk-password').value = 'one';

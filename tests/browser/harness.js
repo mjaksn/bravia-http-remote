@@ -50,7 +50,20 @@ function app(iframe) {
     fire: (id, type) => win().document.getElementById(id)
       .dispatchEvent(new (win().Event)(type, { cancelable: true, bubbles: true })),
     load: (src) => { iframe.src = src; },
+    // An element can exist before the script that gives it its listeners
+    // has run, so readiness means the document finished loading, not that
+    // the markup is there.
+    loaded: () => { try { return win().document.readyState === 'complete'; } catch (e) { return false; } },
   };
+}
+
+/* An exception thrown inside the app, in a timer or a listener, is
+   invisible to a suite that only looks at the DOM afterwards. Surface it
+   so a failure says what went wrong rather than only what did not
+   happen. */
+function watchErrors(a) {
+  a.win().addEventListener('error', (e) => out.push('    app error: ' + e.message));
+  a.win().addEventListener('unhandledrejection', (e) => out.push('    app rejection: ' + e.reason));
 }
 
 function run(suite) {

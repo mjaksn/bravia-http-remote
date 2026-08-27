@@ -1366,7 +1366,15 @@ function initUnlockDialog() {
   // Belt and braces: whatever route a close request took, a build that is
   // still locked goes straight back to the prompt. attemptUnlock clears
   // `locked` before it closes the dialog, so a real unlock passes through.
-  $('unlock-dialog').addEventListener('close', () => { if (locked) openUnlock(); });
+  //
+  // Reopened from a later task rather than from inside the handler.
+  // showModal() called during the dialog's own close event does nothing on
+  // Chromium: it neither reopens the dialog nor throws, and the same call
+  // one task later works. Verified on the test matrix, where the direct
+  // version fails on every Chrome and this one passes.
+  $('unlock-dialog').addEventListener('close', () => {
+    if (locked) setTimeout(openUnlock, 0);
+  });
 }
 
 /* ── boot ──────────────────────────────────────────────────────────── */
