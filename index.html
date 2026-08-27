@@ -154,6 +154,20 @@
 
 <script src="lockbox.js"></script>
 <script src="deploy-config.js"></script>
-<script src="app.js"></script>
+<!-- The console is split across js/, loaded in order. These are classic
+     scripts sharing one global scope rather than modules, because a module
+     cannot be loaded from a file:// page and this app has to open straight
+     off disk. Order matters only in that boot.js runs last. -->
+<script src="js/version.js"></script>
+<script src="js/state.js"></script>
+<script src="js/transport.js"></script>
+<script src="js/session.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/cards-status.js"></script>
+<script src="js/cards-apps.js"></script>
+<script src="js/cards-settings.js"></script>
+<script src="js/collapse.js"></script>
+<script src="js/dialogs.js"></script>
+<script src="js/boot.js"></script>
 </body>
 </html>
