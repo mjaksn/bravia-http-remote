@@ -9,7 +9,9 @@
 <script>
 /* The ordinary console, with the placeholder deploy-config.js the repo
    ships, and the packer that produces a real one. Served with no config
-   override, so this is exactly what a clone does out of the box. */
+   override, so this is exactly what a clone does out of the box, down to
+   what it makes of a password an earlier deployed use of the browser
+   left behind. */
 
 run(async () => {
   const a = app(document.getElementById('app'));
@@ -25,6 +27,7 @@ run(async () => {
      localStorage.getItem('bravia-console-remember') === null,
      a.read('JSON.stringify({...localStorage})'));
   ok('no stay-signed-in note outside a deployed build', a.$('deploy-remembered-note').hidden);
+  ok('no session note outside a deployed build', a.$('deploy-session-note').hidden);
   ok('an unsealed build opens settings, not a lock',
      a.$('settings-dialog').open && !a.$('unlock-dialog').open);
   ok('address and key fields shown', !a.$('settings-connection').hidden);

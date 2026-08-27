@@ -34,13 +34,15 @@ is visible at once, and every supported action is one click away.
   standby are shown dimmed with an "unavailable in standby" tag.
 - **Locked deployments**: ship the app with the address and key already in it,
   sealed under a password, so that a browser that has never been given the
-  password cannot read either one. See
+  password cannot read either one. A browser can be told to stay signed in,
+  which saves the password there and skips the prompt on later visits. See
   [Deploying a locked copy](#deploying-a-locked-copy).
 
 State is polled on a configurable interval; the settings dialog (first launch, or
 the ⚙ button) asks for hostname/IP, pre-shared key, and refresh interval. A copy
-deployed with a locked configuration asks for its password at first launch
-instead, and its settings dialog offers the refresh interval alone.
+deployed with a locked configuration asks for its password instead, at every
+launch unless that browser was told to stay signed in, and its settings dialog
+offers the refresh interval alone.
 
 ## TV-side setup (one time)
 
@@ -157,14 +159,16 @@ cannot be recovered.
 
 Once unlocked, the address and key live in memory for the life of the tab and
 nowhere else: neither is written to localStorage, sessionStorage, cookies or
-IndexedDB, so a reload puts the page back at the password prompt unless the
-password itself was saved. What the page does still remember between visits is
-the two things that are not secrets, the refresh interval and which cards you
-collapsed. The settings dialog drops the address and key fields, keeps the
-refresh interval, and gains a **Log out** button that reloads the page. While it
-is held, the key is XORed under a mask minted per page load and unmasked only for
-the moment a request needs it, so it is not sitting in plain sight in a heap
-snapshot or a devtools scope view.
+IndexedDB. A reload therefore comes back at the password prompt, unless someone
+asked that browser to stay signed in, in which case the saved password opens the
+config again with nothing to type. What the page keeps between visits is
+everything that is not the address or the key: the refresh interval, which cards
+you collapsed, and that saved password if it was asked for. The settings dialog
+drops the address and key fields, keeps the refresh interval, and gains a **Log
+out** button that forgets any saved password and reloads. While it is held, the
+key is XORed under a mask minted per page load and unmasked only for the moment a
+request needs it, so it is not sitting in plain sight in a heap snapshot or a
+devtools scope view.
 
 ### Staying signed in
 

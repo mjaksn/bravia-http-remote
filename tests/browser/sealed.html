@@ -7,8 +7,9 @@
 <script src="/harness/harness.js"></script>
 <script>
 /* A build deployed with a sealed config: what it does before anyone has
-   typed the password, what it does with a wrong one, and what it holds
-   once it is open. Served with a config sealed under "letmein" around
+   typed the password, what it does with a wrong one, what it holds once
+   it is open, and what staying signed in on a machine saves, opens with
+   and gives back. Served with a config sealed under "letmein" around
    host 127.0.0.1:1 (a port nothing answers, so the connection attempt
    fails fast) and key "super-secret-psk". */
 
@@ -106,6 +107,8 @@ run(async () => {
   await waitFor(() => a.$('settings-dialog').open, 'settings');
   ok('address and key fields hidden', a.$('settings-connection').hidden);
   ok('deployment note shown', !a.$('deploy-note').hidden);
+  ok('the note says the session ends with the tab', !a.$('deploy-session-note').hidden);
+  ok('no stay-signed-in note when nothing is saved', a.$('deploy-remembered-note').hidden);
   ok('logout button shown', !a.$('btn-logout').hidden);
   ok('save button says what it does', a.$('btn-cfg-save').textContent === 'Save',
      a.$('btn-cfg-save').textContent);
@@ -173,6 +176,7 @@ run(async () => {
   a.$('btn-settings').click();
   await waitFor(() => a.$('settings-dialog').open, 'settings on a remembered visit');
   ok('settings says the password is saved here', !a.$('deploy-remembered-note').hidden);
+  ok('and drops the note about closing the tab', a.$('deploy-session-note').hidden);
   a.$('btn-cfg-cancel').click();
   await sleep(50);
 

@@ -80,14 +80,16 @@ function loadCfg() {
 }
 
 /* Only ever called for a hand-entered config. A deployed build keeps the
-   address and key in memory alone, so that closing the tab is enough to
-   put them back behind the password. */
+   address and key in memory alone, so that closing the tab puts them back
+   behind the password, unless this browser was told to stay signed in and
+   the saved password opens them again. */
 function saveCfg(c) {
   localStorage.setItem(LS_KEY, JSON.stringify({ ...c, psk: getPsk() }));
 }
 
-/* The refresh interval is a preference, not a secret, so it is the one
-   thing a deployed build does remember between visits. */
+/* The refresh interval is a preference, not a secret, so a deployed
+   build does remember it between visits, alongside which cards are
+   collapsed and, if someone asked for it, the deployment password. */
 function loadStoredInterval() {
   const n = parseInt(localStorage.getItem(LS_INTERVAL_KEY), 10);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -1295,9 +1297,11 @@ function openSettings(errorMsg) {
   // key back into a text box would undo the point of sealing it.
   $('settings-connection').hidden = deployed();
   $('deploy-note').hidden = !deployed();
-  // Closing the tab is only the end of the session while nothing is
-  // saved, so say which of the two this browser is.
-  $('deploy-remembered-note').hidden = !deployed() || readRememberedPassword() === null;
+  // Closing the tab ends the session only while nothing is saved, so the
+  // note says which of the two this browser is rather than both.
+  const staysSignedIn = deployed() && readRememberedPassword() !== null;
+  $('deploy-session-note').hidden = !deployed() || staysSignedIn;
+  $('deploy-remembered-note').hidden = !staysSignedIn;
   $('btn-logout').hidden = !deployed();
   // Nothing to reconnect when the interval is all that can change.
   $('btn-cfg-save').textContent = deployed() ? 'Save' : 'Save & Connect';
@@ -1537,9 +1541,9 @@ async function main() {
   proxyDetected = await detectProxy();
 
   if (deployed()) {
-    // Drop anything an earlier, unsealed use of this browser left behind,
-    // so that the only thing a deployed page can carry between visits is a
-    // password someone asked it to keep.
+    // Drop the connection details an earlier, unsealed use of this browser
+    // left behind. What a deployed page may carry between visits is the
+    // preferences, and a password someone asked it to keep.
     localStorage.removeItem(LS_KEY);
     if (!unlockFromSavedPassword()) openUnlock();
     return;
