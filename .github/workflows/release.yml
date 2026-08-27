@@ -1,0 +1,77 @@
+name: Release
+
+# A tag and nothing else, so cutting a release is always deliberate and
+# always has a version number attached to it.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      # Three-way agreement. A release page naming a version the code never
+      # claimed is a broken promise with a permalink, so this runs before
+      # anything is published and the release job waits on it.
+      - name: The tag, package.json and app.js must agree
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          app="$(node -p "require('fs').readFileSync('app.js','utf8').match(/const APP_VERSION = '([^']+)'/)[1]")"
+          echo "tag $tag / package.json $pkg / app.js $app"
+          [ "$tag" = "$pkg" ] || { echo "tag does not match package.json" >&2; exit 1; }
+          [ "$tag" = "$app" ] || { echo "tag does not match app.js" >&2; exit 1; }
+
+      - name: Lint and unit tests
+        run: |
+          node tests/lint.js
+          node tests/lockbox.test.js
+
+      - name: Build the archive
+        run: node scripts/build.js
+
+      - name: Unpack elsewhere and drive it
+        run: |
+          mkdir -p "$RUNNER_TEMP/unpacked"
+          unzip -q dist/*.zip -d "$RUNNER_TEMP/unpacked"
+          node tests/run-browser.js --root "$RUNNER_TEMP/unpacked/$(ls "$RUNNER_TEMP/unpacked")"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: archive
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [build] # only once the versions are proved equal
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # nothing else, and no secret: github.token cuts a release
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: archive
+          path: dist
+
+      # The notes are the changelog section this release is named for, so
+      # the page and the changelog cannot drift apart.
+      - name: Take the notes from the changelog
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v h="## [$v]" 'index($0,h)==1 {p=1; next} p && index($0,"## [")==1 {exit} p' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "CHANGELOG.md has no section for $v" >&2; exit 1; }
+          cat notes.md
+
+      - name: Create the release
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md dist/*.zip
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,92 @@
+name: CI
+
+# Pull requests are what the ruleset watches, so the gate below has to run
+# there. Pushes to main are covered too, and the manual trigger is a
+# convenience: a dispatched run reports against a commit, not against a
+# pull request's status rollup, so it can never stand in for the real one.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: node tests/lint.js
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22', '24']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      # The primitives are hand-written, so they are checked against the
+      # crypto of whichever Node is running, on both operating systems.
+      - name: Unit tests
+        run: node tests/lockbox.test.js
+
+      # The browser suites drive the real pages. Both runner images ship a
+      # Chromium already, so nothing is downloaded to run them.
+      - name: Browser suites
+        run: node tests/run-browser.js
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Build the archive
+        run: node scripts/build.js
+
+      # Unpacked somewhere else and driven there, because running from the
+      # repository exercises the working tree and proves nothing about the
+      # thing anyone actually downloads.
+      - name: Unpack elsewhere
+        run: |
+          mkdir -p "$RUNNER_TEMP/unpacked"
+          unzip -q dist/*.zip -d "$RUNNER_TEMP/unpacked"
+
+      - name: Run the suites against the unpacked archive
+        run: node tests/run-browser.js --root "$RUNNER_TEMP/unpacked/$(ls "$RUNNER_TEMP/unpacked")"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: archive
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # The single check branch protection requires. Naming the matrix jobs
+  # directly would mean listing every combination, and renaming one would
+  # quietly stop protecting anything.
+  gate:
+    if: always() # so an upstream failure cannot leave this skipped, and satisfied by default
+    needs: [lint, test, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the results
+        run: |
+          echo "lint:  ${{ needs.lint.result }}"
+          echo "test:  ${{ needs.test.result }}"
+          echo "build: ${{ needs.build.result }}"
+          [ "${{ needs.lint.result }}"  = "success" ] || exit 1
+          [ "${{ needs.test.result }}"  = "success" ] || exit 1
+          [ "${{ needs.build.result }}" = "success" ] || exit 1
