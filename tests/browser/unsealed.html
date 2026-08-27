@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>suite: unsealed build and packer</title></head>
+<body>
+<pre id="log">running</pre>
+<iframe id="app" style="width:900px;height:500px"></iframe>
+<iframe id="packer" style="width:900px;height:500px"></iframe>
+<script src="/harness/harness.js"></script>
+<script>
+/* The ordinary console, with the placeholder deploy-config.js the repo
+   ships, and the packer that produces a real one. Served with no config
+   override, so this is exactly what a clone does out of the box. */
+
+run(async () => {
+  const a = app(document.getElementById('app'));
+
+  localStorage.clear();
+  a.load('/index.html');
+  await waitFor(() => a.$('settings-dialog') && a.$('settings-dialog').open, 'settings on first run');
+  ok('an unsealed build opens settings, not a lock',
+     a.$('settings-dialog').open && !a.$('unlock-dialog').open);
+  ok('address and key fields shown', !a.$('settings-connection').hidden);
+  ok('no deployment note', a.$('deploy-note').hidden);
+  ok('no logout button', a.$('btn-logout').hidden);
+  ok('save button offers to connect', a.$('btn-cfg-save').textContent === 'Save & Connect',
+     a.$('btn-cfg-save').textContent);
+  ok('cancel disabled with no config yet', a.$('btn-cfg-cancel').disabled);
+  ok('deployed() false', a.read('deployed()') === false);
+  ok('not locked', a.read('locked') === false);
+
+  const pillBefore = a.$('conn-pill').textContent;
+  a.read('pollOnce(true)');
+  await sleep(300);
+  ok('polling is a no-op before first setup', a.$('conn-pill').textContent === pillBefore);
+
+  a.$('cfg-host').value = '127.0.0.1:1';
+  a.$('cfg-psk').value = 'typed-in-key';
+  a.$('cfg-interval').value = '9';
+  a.fire('settings-form', 'submit');
+  await waitFor(() => a.read('cfg') !== null, 'the typed config');
+  ok('typed host applied', a.read('cfg').host === '127.0.0.1:1', JSON.stringify(a.read('cfg')));
+  ok('typed interval applied', a.read('cfg').interval === 9);
+  ok('typed key readable through getPsk', a.read('getPsk()') === 'typed-in-key');
+  ok('a typed key is masked in memory too',
+     a.read('new TextDecoder().decode(pskMasked)') !== 'typed-in-key');
+
+  const saved = JSON.parse(a.read('localStorage.getItem("bravia-console-config")'));
+  ok('an unsealed build still persists the config',
+     saved && saved.psk === 'typed-in-key' && saved.host === '127.0.0.1:1' && saved.interval === 9,
+     JSON.stringify(saved));
+
+  a.win().location.reload();
+  await sleep(300);
+  await waitFor(() => { try { return a.read('cfg') !== null; } catch (e) { return false; } },
+                'the reloaded page to reuse the stored config');
+  ok('stored config reused after reload', a.read('cfg').host === '127.0.0.1:1');
+  ok('stored key reused after reload', a.read('getPsk()') === 'typed-in-key');
+  ok('no prompt after reload', !a.$('settings-dialog').open && !a.$('unlock-dialog').open);
+
+  a.$('btn-settings').click();
+  await waitFor(() => a.$('settings-dialog').open, 'settings');
+  ok('key prefilled back into the form', a.$('cfg-psk').value === 'typed-in-key');
+  ok('host prefilled back into the form', a.$('cfg-host').value === '127.0.0.1:1');
+  a.$('btn-cfg-cancel').click();
+
+  /* ── the packer ───────────────────────────────────────────────────── */
+  const p = app(document.getElementById('packer'));
+  p.load('/pack.html');
+  await waitFor(() => p.$('pack-form'), 'pack.html');
+
+  p.$('pk-psk').value = 'packed-key';
+  p.$('pk-password').value = 'one';
+  p.$('pk-password2').value = 'two';
+  p.fire('pack-form', 'submit');
+  await sleep(200);
+  ok('mismatched passwords refused',
+     !p.$('pack-error').hidden && /do not match/.test(p.$('pack-error').textContent),
+     p.$('pack-error').textContent);
+  ok('nothing sealed on a refusal', p.$('pack-out').hidden);
+
+  p.$('pk-psk').value = '';
+  p.$('pk-password').value = 'deploy-pw';
+  p.$('pk-password2').value = 'deploy-pw';
+  p.fire('pack-form', 'submit');
+  await sleep(200);
+  ok('a missing key is refused', /pre-shared key/.test(p.$('pack-error').textContent));
+
+  p.$('pk-host').value = '10.0.0.9';
+  p.$('pk-psk').value = 'packed-key';
+  p.$('pk-interval').value = '4';
+  p.fire('pack-form', 'submit');
+  await waitFor(() => !p.$('pack-out').hidden, 'the seal', 40000);
+
+  const text = p.$('pack-text').value;
+  ok('output is a deploy-config.js', /window\.BRAVIA_DEPLOY_CONFIG = \{/.test(text));
+  ok('output carries no plaintext',
+     text.indexOf('packed-key') === -1 && text.indexOf('10.0.0.9') === -1 &&
+     text.indexOf('deploy-pw') === -1);
+
+  const blob = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+  const lockbox = p.win().Lockbox;
+  const opened = lockbox.open('deploy-pw', blob);
+  ok('the sealed file opens with the right password',
+     opened.host === '10.0.0.9' && opened.psk === 'packed-key' && opened.interval === 4,
+     JSON.stringify(opened));
+
+  let denied = '';
+  try { lockbox.open('deploy-pW', blob); } catch (e) { denied = e.message; }
+  ok('the sealed file denies a wrong password', denied === 'Access denied', denied);
+
+  ok('a full-length tag is written', atob(blob.mac).length === 16, String(atob(blob.mac).length));
+  let truncated = '';
+  try { lockbox.open('deploy-pw', { ...blob, mac: 'AA==' }); } catch (e) { truncated = e.message; }
+  ok('a truncated tag is refused rather than checked on fewer bits',
+     truncated === 'Corrupt configuration', truncated);
+  ok('the packer uses the documented stretching',
+     blob.iterations === lockbox.DEFAULT_ITERATIONS && blob.kdf === 'pbkdf2-hmac-sha256',
+     String(blob.iterations));
+
+  p.fire('pack-form', 'submit');
+  await sleep(2000);
+  const again = p.$('pack-text').value;
+  const second = JSON.parse(again.slice(again.indexOf('{'), again.lastIndexOf('}') + 1));
+  ok('each seal is unique',
+     second.ct !== blob.ct && second.salt !== blob.salt && second.nonce !== blob.nonce);
+});
+</script>
+</body>
+</html>
