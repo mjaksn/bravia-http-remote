@@ -15,8 +15,16 @@ run(async () => {
   const a = app(document.getElementById('app'));
 
   localStorage.clear();
+  // A password kept by an earlier, deployed use of this browser. There is
+  // no sealed config here to open with it, so it is dead weight and the
+  // build should drop it at boot.
+  localStorage.setItem('bravia-console-remember', 'YWJjZGVsZXRtZWlu');
   a.load('/index.html');
   await waitFor(() => a.$('settings-dialog') && a.$('settings-dialog').open, 'settings on first run');
+  ok('a password left over from a deployed build is dropped',
+     localStorage.getItem('bravia-console-remember') === null,
+     a.read('JSON.stringify({...localStorage})'));
+  ok('no stay-signed-in note outside a deployed build', a.$('deploy-remembered-note').hidden);
   ok('an unsealed build opens settings, not a lock',
      a.$('settings-dialog').open && !a.$('unlock-dialog').open);
   ok('address and key fields shown', !a.$('settings-connection').hidden);
