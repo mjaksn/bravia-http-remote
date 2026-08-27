@@ -94,6 +94,79 @@ function loadStoredInterval() {
 }
 function saveStoredInterval(n) { localStorage.setItem(LS_INTERVAL_KEY, String(n)); }
 
+/* ── the remembered password ───────────────────────────────────────── */
+
+/* "Stay signed in" on a deployed build keeps the deployment password in
+   this browser's localStorage, so the next visit opens itself. What is
+   stored is the password with five random characters in front of it,
+   UTF-8 encoded and then base64 encoded. The prefix is padding, not
+   protection: anyone at this browser can read the value and recover the
+   password, which is exactly the trade the checkbox offers. It is off
+   unless asked for.
+
+   Everything read back out of the store is attacker chosen, so it is
+   parsed defensively, and anything that does not hold up is treated as
+   though nothing had been stored at all. */
+
+const LS_REMEMBER_KEY = 'bravia-console-remember';
+const REMEMBER_PREFIX_LEN = 5;
+const REMEMBER_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+function randomRememberPrefix() {
+  const bytes = new Uint8Array(REMEMBER_PREFIX_LEN);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  // Sixty-two letters do not divide 256 evenly, so a plain modulo leans
+  // very slightly on the first few. Nothing here rests on the prefix
+  // being uniform, so that is fine.
+  for (const b of bytes) out += REMEMBER_ALPHABET[b % REMEMBER_ALPHABET.length];
+  return out;
+}
+
+/* btoa and atob speak latin1, so the password's UTF-8 bytes travel one
+   byte per character rather than being handed over as a string. */
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function base64ToBytes(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i) & 0xff;
+  return bytes;
+}
+
+function rememberPassword(password) {
+  try {
+    const bytes = new TextEncoder().encode(randomRememberPrefix() + String(password || ''));
+    localStorage.setItem(LS_REMEMBER_KEY, bytesToBase64(bytes));
+  } catch { /* no store to write to, or no room in it; the session still works */ }
+}
+
+function forgetPassword() {
+  try { localStorage.removeItem(LS_REMEMBER_KEY); } catch { /* nothing to forget */ }
+}
+
+/* The password an earlier visit asked to have kept, or null. Null covers
+   every way the value can be wrong as well as its absence: nothing
+   stored, junk where base64 should be, bytes that are not UTF-8, or too
+   few of them to hold the prefix and a password both. */
+function readRememberedPassword() {
+  let raw = null;
+  try { raw = localStorage.getItem(LS_REMEMBER_KEY); } catch { return null; }
+  if (typeof raw !== 'string' || raw === '') return null;
+  try {
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(raw)) return null;
+    const bytes = base64ToBytes(raw);
+    if (bytes.length <= REMEMBER_PREFIX_LEN) return null;
+    const password = new TextDecoder('utf-8', { fatal: true })
+      .decode(bytes.subarray(REMEMBER_PREFIX_LEN));
+    return password === '' ? null : password;
+  } catch { return null; }
+}
+
 function apiBase() {
   if (proxyDetected || !cfg.host) return '';
   if (/^https?:\/\//i.test(cfg.host)) return cfg.host.replace(/\/+$/, '');
@@ -1222,6 +1295,9 @@ function openSettings(errorMsg) {
   // key back into a text box would undo the point of sealing it.
   $('settings-connection').hidden = deployed();
   $('deploy-note').hidden = !deployed();
+  // Closing the tab is only the end of the session while nothing is
+  // saved, so say which of the two this browser is.
+  $('deploy-remembered-note').hidden = !deployed() || readRememberedPassword() === null;
   $('btn-logout').hidden = !deployed();
   // Nothing to reconnect when the interval is all that can change.
   $('btn-cfg-save').textContent = deployed() ? 'Save' : 'Save & Connect';
@@ -1279,9 +1355,11 @@ function initSettingsDialog() {
 /* ── sealed deployment config ──────────────────────────────────────── */
 
 /* Reloading is the whole logout: nothing decrypted was written anywhere
-   that survives it, so the fresh page comes up locked again. The wipes
+   that survives it apart from a password the user asked to keep, and that
+   is dropped here, so the fresh page comes up locked again. The wipes
    below only shorten the window before that happens. */
 function logout() {
+  forgetPassword();
   stopPolling();
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   epoch++;
@@ -1343,6 +1421,13 @@ async function attemptUnlock() {
   btn.disabled = false;
   btn.textContent = label;
   input.value = '';
+  if ($('unlock-remember').checked) rememberPassword(password);
+  else forgetPassword();
+  applyUnlockedSecret(secret);
+}
+
+/* What an opened lockbox means, wherever the password came from. */
+function applyUnlockedSecret(secret) {
   setPsk(secret.psk || '');
   // A locally chosen interval outranks the packaged one: it is the one
   // setting this mode still lets the user own.
@@ -1351,9 +1436,29 @@ async function attemptUnlock() {
     interval: Math.max(1, loadStoredInterval() || parseInt(secret.interval, 10) || 5),
   };
   locked = false;
-  $('unlock-dialog').close();
+  if ($('unlock-dialog').open) $('unlock-dialog').close();
   $('empty-state').hidden = true;
   connect();
+}
+
+/* A visit to a browser that was told to stay signed in. True when the
+   saved password opened the sealed config and the console is on its way
+   up; false whenever the prompt is still needed, which covers nothing
+   saved, a saved value that will not parse, and one holding the wrong
+   password. A password that no longer works is dropped rather than kept
+   to fail again. */
+function unlockFromSavedPassword() {
+  const password = readRememberedPassword();
+  if (password === null) return false;
+  let secret = null;
+  try {
+    secret = Lockbox.open(password, sealedCfg);
+  } catch {
+    forgetPassword();
+    return false;
+  }
+  applyUnlockedSecret(secret);
+  return true;
 }
 
 function initUnlockDialog() {
@@ -1433,11 +1538,17 @@ async function main() {
 
   if (deployed()) {
     // Drop anything an earlier, unsealed use of this browser left behind,
-    // so that a deployed page really does hold nothing between visits.
+    // so that the only thing a deployed page can carry between visits is a
+    // password someone asked it to keep.
     localStorage.removeItem(LS_KEY);
-    openUnlock();
+    if (!unlockFromSavedPassword()) openUnlock();
     return;
   }
+
+  // Nothing to stay signed in to without a sealed config, so a saved
+  // password left by an earlier, deployed use of this browser is dead
+  // weight and goes.
+  forgetPassword();
 
   const stored = loadCfg();
   if (stored) {

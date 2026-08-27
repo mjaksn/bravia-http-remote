@@ -10,6 +10,16 @@ release page.
 
 ## [Unreleased]
 
+### Added
+
+- **Stay signed in on this computer**, a checkbox on the password prompt of a
+  locked deployment. Ticked, it saves the deployment password in that browser's
+  localStorage, and later visits open themselves with nothing to type. A saved
+  password that no longer works, or that has been tampered with, is discarded and
+  the prompt comes up as it would on a first visit. Logging out deletes it. The
+  box is off unless it is ticked, and what is saved is only lightly disguised:
+  anyone at that browser can read the password back out.
+
 ## [1.0.0] - 2026-08-26
 
 First tagged release. The console itself predates this changelog; what follows is

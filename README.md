@@ -136,7 +136,9 @@ control of the display.
 A locked deployment ships the connection details inside the page instead,
 encrypted with a password. The app starts at a password prompt; a wrong password
 gets **access denied** and nothing else. Everything past that point is the normal
-console.
+console. The prompt offers **Stay signed in on this computer**, off unless
+someone ticks it; see [Staying signed in](#staying-signed-in) for what that
+keeps and what it costs.
 
 1. Open `pack.html` (double-click it, same as the app itself).
 2. Fill in the display's address, the pre-shared key, a starting refresh interval,
@@ -155,13 +157,31 @@ cannot be recovered.
 
 Once unlocked, the address and key live in memory for the life of the tab and
 nowhere else: neither is written to localStorage, sessionStorage, cookies or
-IndexedDB, so a reload puts the page back at the password prompt. What the page
-does still remember between visits is the two things that are not secrets, the
-refresh interval and which cards you collapsed. The settings dialog drops the
-address and key fields, keeps the refresh interval, and gains a **Log out**
-button that reloads the page. While it is held, the key is XORed under a mask
-minted per page load and unmasked only for the moment a request needs it, so it
-is not sitting in plain sight in a heap snapshot or a devtools scope view.
+IndexedDB, so a reload puts the page back at the password prompt unless the
+password itself was saved. What the page does still remember between visits is
+the two things that are not secrets, the refresh interval and which cards you
+collapsed. The settings dialog drops the address and key fields, keeps the
+refresh interval, and gains a **Log out** button that reloads the page. While it
+is held, the key is XORed under a mask minted per page load and unmasked only for
+the moment a request needs it, so it is not sitting in plain sight in a heap
+snapshot or a devtools scope view.
+
+### Staying signed in
+
+Ticking **Stay signed in on this computer** at the password prompt saves the
+deployment password in that browser's localStorage, under
+`bravia-console-remember`. The next visit opens itself: the page reads the saved
+password, opens the sealed config with it and goes straight to the console with
+nothing to type. A saved password that no longer opens the config, or that
+someone has edited into nonsense, is discarded and the prompt comes up exactly as
+it would have on a first visit. **Log out** deletes it, and so does loading a
+copy of the app that has no sealed config.
+
+The box is off unless it is ticked, and it is worth leaving off on any machine
+that is not yours. What is saved is the password with five random characters in
+front of it, UTF-8 encoded and then base64 encoded, which keeps it from being
+legible over a shoulder and does nothing else: anyone at that browser can read it
+back out, and anyone at that browser can drive the display anyway.
 
 ### What it protects against, and what it does not
 
@@ -179,6 +199,9 @@ It is not a security boundary beyond that, and it is not trying to be:
 - On a machine where the right password has been entered, the decrypted values are
   in that page's memory and can be read by anyone at that keyboard. Browser caches,
   swap files and memory dumps are all outside the scope of this.
+- A machine told to stay signed in holds the password in localStorage in a form
+  anyone at that browser can undo, which trades the lock away on that one machine
+  in exchange for not typing. It is a per-machine choice and it is off by default.
 - The requests themselves are unchanged: the key still travels in a cleartext
   `X-Auth-PSK` header over plain HTTP once the page is unlocked.
 
