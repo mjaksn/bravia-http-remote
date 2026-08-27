@@ -39,13 +39,7 @@ run(async () => {
   a.$('unlock-dialog').close();          // whatever route a close request takes
   await sleep(300);
   ok('a closed lock reopens itself', a.$('unlock-dialog').open,
-     'open=' + a.$('unlock-dialog').open +
-     ' locked=' + a.read('locked') +
-     ' reopenTried=' + a.read('typeof openUnlock') +
-     ' showModalThrows=' + a.read(
-       '(() => { const d = document.getElementById("unlock-dialog");' +
-       ' if (d.open) return "n/a: already open";' +
-       ' try { d.showModal(); return "no, it opened"; } catch (e) { return e.name + ": " + e.message; } })()'));
+     'open=' + a.$('unlock-dialog').open + ' locked=' + a.read('locked'));
   a.$('btn-settings').click();
   await sleep(100);
   ok('settings unreachable while locked', !a.$('settings-dialog').open);
