@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>suite: sealed build</title></head>
+<body>
+<pre id="log">running</pre>
+<iframe id="app" style="width:900px;height:600px"></iframe>
+<script src="/harness/harness.js"></script>
+<script>
+/* A build deployed with a sealed config: what it does before anyone has
+   typed the password, what it does with a wrong one, and what it holds
+   once it is open. Served with a config sealed under "letmein" around
+   host 127.0.0.1:1 (a port nothing answers, so the connection attempt
+   fails fast) and key "super-secret-psk". */
+
+run(async () => {
+  const a = app(document.getElementById('app'));
+
+  // A browser that used this origin as an ordinary console beforehand.
+  localStorage.clear();
+  localStorage.setItem('bravia-console-config',
+    JSON.stringify({ host: '10.9.9.9', psk: 'stale-old-key', interval: 3 }));
+  a.load('/index.html');
+
+  await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open, 'the lock');
+  ok('starts at the unlock prompt', a.$('unlock-dialog').open);
+  ok('settings dialog stays shut while locked', !a.$('settings-dialog').open);
+  ok('empty state hidden while locked', a.$('empty-state').hidden);
+  ok('no config yet', a.read('cfg') === null);
+  ok('locked flag set', a.read('locked') === true);
+  ok('a leftover stored config is purged at boot',
+     localStorage.getItem('bravia-console-config') === null,
+     localStorage.getItem('bravia-console-config'));
+
+  /* Ways out of the lock that must not exist. */
+  a.fire('unlock-dialog', 'cancel');
+  await sleep(50);
+  ok('Esc cannot dismiss the lock', a.$('unlock-dialog').open);
+  watchErrors(a);
+  a.$('unlock-dialog').close();          // whatever route a close request takes
+  // Either the prompt comes straight back or the page reloads into a
+  // locked one. Both are the lock holding; waiting covers both.
+  const lockHeld = () => { const d = a.$('unlock-dialog'); return !!(d && d.open); };
+  await waitFor(lockHeld, 'the lock to come back after a close');
+  ok('a closed lock comes back', lockHeld(), 'locked=' + a.read('locked'));
+  a.$('btn-settings').click();
+  await sleep(100);
+  ok('settings unreachable while locked', !a.$('settings-dialog').open);
+  a.read('openSettings("forced")');
+  await sleep(50);
+  ok('openSettings is inert while locked', !a.$('settings-dialog').open);
+
+  /* Returning to the tab must not paint a failure over the prompt. */
+  const pillBefore = a.$('conn-pill').textContent;
+  a.read('pollOnce(true)');
+  await sleep(300);
+  ok('polling is a no-op with no config', a.$('conn-pill').textContent === pillBefore,
+     pillBefore + ' became ' + a.$('conn-pill').textContent);
+
+  /* ── a wrong password ─────────────────────────────────────────────── */
+  a.$('unlock-password').value = 'wrong-one';
+  a.fire('unlock-form', 'submit');
+  await waitFor(() => !a.$('unlock-error').hidden, 'the denial');
+  ok('access denied shown', a.$('unlock-error').textContent === 'Access denied.',
+     a.$('unlock-error').textContent);
+  ok('still locked after a wrong password', a.$('unlock-dialog').open && a.read('cfg') === null);
+  ok('password field cleared after failure', a.$('unlock-password').value === '');
+  ok('nothing connected', a.read('getPsk()') === '');
+
+  a.$('unlock-password').value = '';
+  a.fire('unlock-form', 'submit');
+  await sleep(150);
+  ok('empty password is refused', /Enter the password/.test(a.$('unlock-error').textContent));
+
+  /* ── the right password ───────────────────────────────────────────── */
+  a.$('unlock-password').value = 'letmein';
+  a.fire('unlock-form', 'submit');
+  await waitFor(() => a.read('cfg') !== null, 'the unlock');
+  ok('unlock dialog closed', !a.$('unlock-dialog').open);
+  await sleep(200);
+  ok('unlock dialog stays closed', !a.$('unlock-dialog').open);
+  ok('host taken from the sealed config', a.read('cfg').host === '127.0.0.1:1',
+     JSON.stringify(a.read('cfg')));
+  ok('interval taken from the sealed config', a.read('cfg').interval === 7);
+  ok('locked flag cleared', a.read('locked') === false);
+  ok('key recovered', a.read('getPsk()') === 'super-secret-psk');
+  ok('cfg does not carry the key', a.read('JSON.stringify(cfg)').indexOf('psk') === -1);
+  ok('password field cleared after success', a.$('unlock-password').value === '');
+
+  /* ── the key is masked in memory ──────────────────────────────────── */
+  ok('stored bytes are not the key',
+     a.read('new TextDecoder().decode(pskMasked)') !== 'super-secret-psk');
+  ok('mask matches the key in length',
+     a.read('pskMask.length') === 16 && a.read('pskMasked.length') === 16);
+  ok('mask is not all zeroes', a.read('pskMask.some(b => b !== 0)') === true);
+
+  /* ── nothing durable was written ──────────────────────────────────── */
+  const stores = a.read(
+    'JSON.stringify({ls: {...localStorage}, ss: {...sessionStorage}, ck: document.cookie})');
+  ok('neither address nor key reached storage',
+     stores.indexOf('super-secret-psk') === -1 && stores.indexOf('127.0.0.1:1') === -1, stores);
+  ok('no config key at all', a.read('localStorage.getItem("bravia-console-config")') === null);
+
+  /* ── settings in a deployed build ─────────────────────────────────── */
+  a.$('btn-settings').click();
+  await waitFor(() => a.$('settings-dialog').open, 'settings');
+  ok('address and key fields hidden', a.$('settings-connection').hidden);
+  ok('deployment note shown', !a.$('deploy-note').hidden);
+  ok('logout button shown', !a.$('btn-logout').hidden);
+  ok('save button says what it does', a.$('btn-cfg-save').textContent === 'Save',
+     a.$('btn-cfg-save').textContent);
+  ok('interval still editable', a.$('cfg-interval').value === '7' && !a.$('cfg-interval').disabled);
+  ok('key not echoed into the form', a.$('cfg-psk').value === '');
+
+  a.$('cfg-interval').value = '12';
+  a.fire('settings-form', 'submit');
+  await waitFor(() => a.read('cfg').interval === 12, 'the interval edit');
+  ok('interval applied', a.read('cfg').interval === 12);
+  ok('interval remembered', a.read('localStorage.getItem("bravia-console-interval")') === '12');
+  ok('an interval edit writes no key',
+     a.read('JSON.stringify({...localStorage})').indexOf('super-secret-psk') === -1);
+  ok('connection unchanged by an interval edit', a.read('getPsk()') === 'super-secret-psk');
+
+  /* ── logout ───────────────────────────────────────────────────────── */
+  a.$('btn-settings').click();
+  await waitFor(() => a.$('settings-dialog').open, 'settings again');
+  a.$('btn-logout').click();
+  await sleep(300);
+  await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open && a.read('cfg') === null,
+                'the page to come back locked');
+  ok('logout returns to the lock', a.$('unlock-dialog').open && a.read('cfg') === null);
+  ok('logout drops the key', a.read('getPsk()') === '');
+  ok('logout keeps the interval preference',
+     a.read('localStorage.getItem("bravia-console-interval")') === '12');
+
+  a.$('unlock-password').value = 'letmein';
+  a.fire('unlock-form', 'submit');
+  await waitFor(() => a.read('cfg') !== null, 'the second unlock');
+  ok('a locally chosen interval outranks the packaged one', a.read('cfg').interval === 12);
+  ok('key recovered again', a.read('getPsk()') === 'super-secret-psk');
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+# Build output, rebuilt from the working tree whenever it is needed.
+dist/

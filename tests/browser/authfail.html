@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>suite: rejected key in a deployed build</title></head>
+<body>
+<pre id="log">running</pre>
+<iframe id="app" style="width:900px;height:500px"></iframe>
+<script src="/harness/harness.js"></script>
+<script>
+/* A deployed build whose key the display rejects. The sealed host is
+   blank, so the app talks to this origin, and the test server answers
+   /sony/* with 403: exactly what a wrong pre-shared key looks like from
+   the app's side. Nobody in this situation can fix the key, so the point
+   is that the app says so and offers the way out rather than inviting an
+   edit it will not keep. */
+
+run(async () => {
+  const a = app(document.getElementById('app'));
+
+  localStorage.clear();
+  localStorage.setItem('bravia-console-interval', '6');
+  a.load('/index.html');
+
+  await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open, 'the lock');
+  ok('the interval preference survives a locked boot',
+     localStorage.getItem('bravia-console-interval') === '6');
+
+  a.$('unlock-password').value = 'letmein';
+  a.fire('unlock-form', 'submit');
+  await waitFor(() => a.read('cfg') !== null, 'the unlock');
+  ok('unlocked with an empty host, so requests go to this origin',
+     a.read('cfg').host === '');
+  ok('a stored interval outranks the packaged one', a.read('cfg').interval === 6);
+
+  await waitFor(() => a.$('conn-pill').textContent === 'AUTH FAILED', 'the rejection');
+  ok('a rejected key shows AUTH FAILED', a.$('conn-pill').textContent === 'AUTH FAILED');
+
+  await waitFor(() => a.$('settings-dialog').open, 'settings to reopen');
+  ok('the failure text is written for a deployed build',
+     /deployment/.test(a.$('settings-error').textContent) && !a.$('settings-error').hidden,
+     a.$('settings-error').textContent);
+  ok('the failure does not expose the connection fields', a.$('settings-connection').hidden);
+  ok('logout is reachable from the failure', !a.$('btn-logout').hidden);
+  ok('the key never reached storage',
+     JSON.stringify({ ...localStorage }).indexOf('same-origin-key') === -1);
+});
+</script>
+</body>
+</html>

@@ -6,6 +6,11 @@
    X-Auth-PSK pre-shared-key header. No build step, no dependencies.
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* Kept equal to `version` in package.json, and to the tag a release is cut
+   from. tests/lint.js fails a pull request where the two disagree, and the
+   release workflow refuses a tag that disagrees with either. */
+const APP_VERSION = '1.0.0';
+
 const LS_KEY = 'bravia-console-config';
 const LS_INTERVAL_KEY = 'bravia-console-interval';
 const RPC_TIMEOUT_MS = 8000;
@@ -1259,6 +1264,7 @@ function initSettingsDialog() {
     saveCfg(cfg);
     connect();
   });
+  $('app-version').textContent = 'Bravia Console ' + APP_VERSION;
   $('btn-cfg-cancel').onclick = () => $('settings-dialog').close();
   $('btn-logout').onclick = logout;
   $('btn-psk-toggle').onclick = () => {
@@ -1360,7 +1366,22 @@ function initUnlockDialog() {
   // Belt and braces: whatever route a close request took, a build that is
   // still locked goes straight back to the prompt. attemptUnlock clears
   // `locked` before it closes the dialog, so a real unlock passes through.
-  $('unlock-dialog').addEventListener('close', () => { if (locked) openUnlock(); });
+  //
+  // showModal() around a dialog's own close event is unreliable on
+  // Chromium: called from inside the handler it does nothing at all, and
+  // neither throws nor reopens, while a deferred call is honoured only
+  // most of the time. So the prompt is put back one task later and the
+  // result is checked, and if it did not take, the page reloads. Nothing
+  // decrypted outlives a reload, so what comes back is locked too, which
+  // is the only outcome that actually matters here.
+  $('unlock-dialog').addEventListener('close', () => {
+    if (!locked) return;
+    setTimeout(() => {
+      if (!locked) return;
+      if (!$('unlock-dialog').open) openUnlock();
+      if (!$('unlock-dialog').open) location.reload();
+    }, 0);
+  });
 }
 
 /* ── boot ──────────────────────────────────────────────────────────── */
