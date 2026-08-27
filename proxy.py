@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Optional zero-dependency helper for Bravia Console (Python flavor).
 
-Browsers block direct cross-origin requests to the TV because Bravia
-displays never answer CORS preflights. This script serves the app's
-static files AND forwards /sony/* requests to the TV, so everything
-becomes same-origin and works in any unmodified browser.
+Many Bravia displays never answer CORS preflights, and a browser then
+blocks every direct request the app makes to the TV. This script serves
+the app's static files AND forwards /sony/* requests to the TV, so
+everything becomes same-origin and works in any unmodified browser.
 
 Usage:   python proxy.py <tv-host[:port]> [port] [bind-address]
 Example: python proxy.py 192.168.1.50
          -> open http://localhost:8585
 
 Defaults: port 8585, bound to 127.0.0.1 (this machine only).
-Bind to 0.0.0.0 to reach the app from other devices on your LAN --
+Bind to 0.0.0.0 to reach the app from other devices on your LAN, but
 note anyone who can reach the port can then control the TV.
 """
 

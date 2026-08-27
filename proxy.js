@@ -4,17 +4,17 @@
 /*
  * Optional zero-dependency helper for Bravia Console.
  *
- * Browsers block direct cross-origin requests to the TV because Bravia
- * displays never answer CORS preflights. This script serves the app's
- * static files AND forwards /sony/* requests to the TV, so everything
- * becomes same-origin and works in any unmodified browser.
+ * Many Bravia displays never answer CORS preflights, and a browser then
+ * blocks every direct request the app makes to the TV. This script serves
+ * the app's static files AND forwards /sony/* requests to the TV, so
+ * everything becomes same-origin and works in any unmodified browser.
  *
- * Usage:   node proxy.js <tv-host> [port] [bind-address]
+ * Usage:   node proxy.js <tv-host[:port]> [port] [bind-address]
  * Example: node proxy.js 192.168.1.50
  *          → open http://localhost:8585
  *
  * Defaults: port 8585, bound to 127.0.0.1 (this machine only).
- * Bind to 0.0.0.0 to reach the app from other devices on your LAN —
+ * Bind to 0.0.0.0 to reach the app from other devices on your LAN, but
  * note anyone who can reach the port can then control the TV.
  */
 
@@ -55,7 +55,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.startsWith('/sony/')) {
-    // Buffer the body so the forwarded request carries Content-Length —
+    // Buffer the body so the forwarded request carries Content-Length:
     // embedded Bravia HTTP stacks may reject chunked request bodies.
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static files — no directory traversal.
+  // Static files, no directory traversal.
   const rel = url === '/' ? 'index.html' : url.slice(1);
   const file = path.join(root, path.normalize(rel));
   if (!file.startsWith(root) || rel.includes('..')) {

@@ -4,9 +4,14 @@ A single-page vanilla JS web app for controlling a Sony Bravia TV / professional
 your local network. It talks **directly to the TV** using the Bravia HTTP REST API
 (JSON-RPC over plain HTTP, no encryption) and authenticates with the
 **pre-shared key** (`X-Auth-PSK` header). No frameworks, no build step, no
-dependencies, just `index.html`, `style.css`, and `app.js`.
+dependencies, just static files you can open from disk.
 
-![Alt text](content/screenshot.png)
+![The console connected to an XBR-75X90CH: a dark multi-column dashboard whose
+cards cover power (powered on, with standby and reboot), the current input
+(HDMI 2), audio, seven external inputs with connected-device dots, an app
+filter, remote keys grouped by navigation, playback, channels and numbers,
+picture and sound settings as sliders and dropdowns, speaker routing, and
+system details.](content/screenshot.png)
 
 The UI is a status dashboard, not a picture of a remote: everything the TV reports
 is visible at once, and every supported action is one click away.
@@ -27,9 +32,15 @@ is visible at once, and every supported action is one click away.
   unsupported controls. Anything that only fails at runtime is hidden the moment
   the TV reports "no such method". Controls that exist but are unavailable in
   standby are shown dimmed with an "unavailable in standby" tag.
+- **Locked deployments**: ship the app with the address and key already in it,
+  sealed under a password, so that a browser that has never been given the
+  password cannot read either one. See
+  [Deploying a locked copy](#deploying-a-locked-copy).
 
 State is polled on a configurable interval; the settings dialog (first launch, or
-the ⚙ button) asks for hostname/IP, pre-shared key, and refresh interval.
+the ⚙ button) asks for hostname/IP, pre-shared key, and refresh interval. A copy
+deployed with a locked configuration asks for its password at first launch
+instead, and its settings dialog offers the refresh interval alone.
 
 ## TV-side setup (one time)
 
@@ -76,7 +87,7 @@ browser will block the app's calls, so use Option C.
 
 ### Option B: any static file server
 
-Serve the three files from anywhere **over plain `http://`**, or put your own
+Serve the files from anywhere **over plain `http://`**, or put your own
 reverse proxy in front of `/sony/*`.
 
 Serving them changes the page's origin from `null` to `http://host:port`, so a TV
@@ -115,11 +126,71 @@ the hostname field blank in settings. (Defaults: port 8585, bound to 127.0.0.1.
 Passing `... 8585 0.0.0.0` exposes it to your LAN; anyone who can reach the port
 can then control the TV.)
 
+## Deploying a locked copy
+
+Left alone, the app asks each browser for the hostname and the pre-shared key and
+keeps them in that browser's localStorage. That is fine for your own machine and
+wrong for a page you leave sitting on the LAN, where anyone who loads it inherits
+control of the display.
+
+A locked deployment ships the connection details inside the page instead,
+encrypted with a password. The app starts at a password prompt; a wrong password
+gets **access denied** and nothing else. Everything past that point is the normal
+console.
+
+1. Open `pack.html` (double-click it, same as the app itself).
+2. Fill in the display's address, the pre-shared key, a starting refresh interval,
+   and the password you intend to hand out.
+3. Press **Seal**. The page encrypts the lot, opens it again to prove the file
+   works, and offers it for download as `deploy-config.js`.
+4. Put that file next to `index.html`, replacing the placeholder the repo ships,
+   and deploy the folder however you were going to.
+
+To go back to the ordinary behavior, delete `deploy-config.js` or set
+`window.BRAVIA_DEPLOY_CONFIG` back to `null`. To change the address, the key or
+the password, repack: there is nothing to edit by hand, and a forgotten password
+cannot be recovered.
+
+### What a locked copy does with the details
+
+Once unlocked, the address and key live in memory for the life of the tab and
+nowhere else: neither is written to localStorage, sessionStorage, cookies or
+IndexedDB, so a reload puts the page back at the password prompt. What the page
+does still remember between visits is the two things that are not secrets, the
+refresh interval and which cards you collapsed. The settings dialog drops the
+address and key fields, keeps the refresh interval, and gains a **Log out**
+button that reloads the page. While it is held, the key is XORed under a mask
+minted per page load and unmasked only for the moment a request needs it, so it
+is not sitting in plain sight in a heap snapshot or a devtools scope view.
+
+### What it protects against, and what it does not
+
+The bar being cleared is *a machine on the LAN that has never been given the
+password cannot get the display's address or key out of this page*. That much it
+does.
+
+It is not a security boundary beyond that, and it is not trying to be:
+
+- Anyone who can load the page can take a copy of `deploy-config.js` and attack it
+  offline, at whatever rate their hardware allows. The password is stretched with
+  120,000 rounds of PBKDF2-HMAC-SHA256 and the payload is sealed with
+  HMAC-SHA256, which buys time against a weak password rather than safety. Pick a
+  password worth guessing at.
+- On a machine where the right password has been entered, the decrypted values are
+  in that page's memory and can be read by anyone at that keyboard. Browser caches,
+  swap files and memory dumps are all outside the scope of this.
+- The requests themselves are unchanged: the key still travels in a cleartext
+  `X-Auth-PSK` header over plain HTTP once the page is unlocked.
+
+The crypto lives in `lockbox.js` and is deliberately self-contained rather than
+using WebCrypto: `crypto.subtle` exists only in a secure context, and this app is
+served over plain `http://` on a LAN, exactly where it would be missing.
+
 ## Notes
 
-- The pre-shared key is stored **unencrypted in the browser's localStorage**, and
-  travels in cleartext HTTP headers on your LAN. That is inherent to the PSK
-  variant of the Bravia API.
+- Without a deployment config, the pre-shared key is stored **unencrypted in the
+  browser's localStorage**. In every mode it travels in cleartext HTTP headers on
+  your LAN. That last part is inherent to the PSK variant of the Bravia API.
 - Some firmware answers CORS preflights by reflecting back whatever `Origin` it
   was sent, together with `Access-Control-Allow-Credentials: true`. On such a TV
   any web page you visit can reach the API from your browser, so the pre-shared
@@ -142,9 +213,13 @@ can then control the TV.)
 | Service      | Methods                                                                 |
 |--------------|-------------------------------------------------------------------------|
 | `guide`      | `getSupportedApiInfo`                                                    |
-| `system`     | `getSystemInformation`, `getPowerStatus`, `setPowerStatus`, `requestReboot`, `getPowerSavingMode`, `setPowerSavingMode`, `getLEDIndicatorStatus`, `setLEDIndicatorStatus`, `getRemoteControllerInfo`, `getMethodTypes` |
+| `system`     | `getSystemInformation`, `getPowerStatus`, `setPowerStatus`, `requestReboot`, `getPowerSavingMode`, `setPowerSavingMode`, `getLEDIndicatorStatus`, `setLEDIndicatorStatus`, `getRemoteControllerInfo` |
 | `audio`      | `getVolumeInformation`, `setAudioVolume`, `setAudioMute`, `getSoundSettings`, `setSoundSettings`, `getSpeakerSettings`, `setSpeakerSettings` |
 | `avContent`  | `getPlayingContentInfo`, `getCurrentExternalInputsStatus`, `setPlayContent` |
 | `appControl` | `getApplicationList`, `getApplicationStatusList`, `setActiveApp`, `terminateApps`, `setTextForm` |
 | `video`      | `getPictureQualitySettings`, `setPictureQualitySettings`                 |
 | `ircc` (SOAP)| `X_SendIRCC` for remote key codes                                        |
+
+When a display does not offer `guide.getSupportedApiInfo`, capability discovery
+falls back to `getMethodTypes`, which is probed on every service in the table
+above and on `videoScreen`.
