@@ -10,6 +10,14 @@ release page.
 
 ## [Unreleased]
 
+### Changed
+
+- The console is split from one 1450 line `app.js` into `js/`, a file per job:
+  state, transport, session, shell, the card groups, the dialogs and boot. The
+  code itself is unchanged, and they remain classic scripts sharing one global
+  scope, since a module cannot be loaded from a `file://` page.
+- `APP_VERSION` now lives in `js/version.js`.
+
 ## [1.0.0] - 2026-08-26
 
 First tagged release. The console itself predates this changelog; what follows is

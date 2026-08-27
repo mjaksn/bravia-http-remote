@@ -9,7 +9,8 @@ not accidents.
 
 | Path | What it is |
 | --- | --- |
-| `index.html`, `style.css`, `app.js` | The console itself. |
+| `index.html`, `style.css` | The page and its styling. |
+| `js/` | The console, split by job. Classic scripts sharing one global scope, loaded in order by `index.html`. |
 | `lockbox.js` | Self-contained SHA-256 / HMAC / PBKDF2 used to seal a deployment config. |
 | `pack.html` | Standalone page that writes `deploy-config.js`. |
 | `deploy-config.js` | Placeholder in the repository. A real one is produced per deployment. |
@@ -23,7 +24,7 @@ not accidents.
 worth knowing before rather than after:
 
 - **The version lives in two places and must agree**: `version` in `package.json` and
-  `APP_VERSION` in `app.js`. A release additionally requires the tag to match both, and
+  `APP_VERSION` in `js/version.js`. A release additionally requires the tag to match both, and
   `CHANGELOG.md` to have a `## [x.y.z]` section for it.
 - **`deploy-config.js` stays the placeholder.** Committing a sealed one would pin every
   clone to one display and put a real pre-shared key in the history.
@@ -36,6 +37,10 @@ worth knowing before rather than after:
 - **No dependencies.** Not for the app, not for the tests, not for the tooling. If
   something seems to need one, it probably needs less code instead.
 - **No build step.** What is in the repository is what runs in the browser.
+- **No modules.** A `type="module"` script cannot be loaded from a `file://` page, so the
+  files under `js/` are classic scripts sharing one global scope. Adding a file means
+  adding a `<script>` tag to `index.html`, and a name declared at the top level of one
+  file is visible to all of them, so names have to stay unique across the directory.
 - **WebCrypto is not available.** The app is served over plain `http://` on a LAN, which
   is not a secure context, so `crypto.subtle` is missing exactly where it would be used.
   `crypto.getRandomValues` is fine. This is why `lockbox.js` implements its own hashing.
@@ -63,7 +68,7 @@ artefact works.
 
 ## Releasing
 
-1. Bump `version` in `package.json` and `APP_VERSION` in `app.js` to the same number.
+1. Bump `version` in `package.json` and `APP_VERSION` in `js/version.js` to the same number.
 2. Write the `## [x.y.z] - YYYY-MM-DD` section in `CHANGELOG.md`, with its link
    definition at the foot. It becomes the release notes verbatim.
 3. Merge through a pull request. The `gate` check has to pass.

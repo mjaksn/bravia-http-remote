@@ -12,7 +12,7 @@
  * fixed timestamp, so building the same tree twice gives the same bytes.
  *
  * The version comes from package.json, which tests/lint.js has already
- * checked against app.js and which the release workflow has checked
+ * checked against js/version.js and which the release workflow has checked
  * against the tag. One file list, used by both workflows, so continuous
  * integration and the release cannot ship different things.
  */
@@ -26,7 +26,7 @@ const ROOT = path.join(__dirname, '..');
 const FILES = [
   'index.html',
   'style.css',
-  'app.js',
+  'js',
   'lockbox.js',
   'deploy-config.js',
   'pack.html',

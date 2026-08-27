@@ -21,14 +21,14 @@ jobs:
       # Three-way agreement. A release page naming a version the code never
       # claimed is a broken promise with a permalink, so this runs before
       # anything is published and the release job waits on it.
-      - name: The tag, package.json and app.js must agree
+      - name: The tag, package.json and js/version.js must agree
         run: |
           tag="${GITHUB_REF_NAME#v}"
           pkg="$(node -p "require('./package.json').version")"
-          app="$(node -p "require('fs').readFileSync('app.js','utf8').match(/const APP_VERSION = '([^']+)'/)[1]")"
-          echo "tag $tag / package.json $pkg / app.js $app"
+          app="$(node -p "require('fs').readFileSync('js/version.js','utf8').match(/const APP_VERSION = '([^']+)'/)[1]")"
+          echo "tag $tag / package.json $pkg / js/version.js $app"
           [ "$tag" = "$pkg" ] || { echo "tag does not match package.json" >&2; exit 1; }
-          [ "$tag" = "$app" ] || { echo "tag does not match app.js" >&2; exit 1; }
+          [ "$tag" = "$app" ] || { echo "tag does not match js/version.js" >&2; exit 1; }
 
       - name: Lint and unit tests
         run: |

@@ -17,17 +17,21 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-const JS = ['app.js', 'lockbox.js', 'deploy-config.js', 'proxy.js',
+const JS = ['lockbox.js', 'deploy-config.js', 'proxy.js',
+            'js/version.js', 'js/state.js', 'js/transport.js', 'js/session.js', 
+            'js/shell.js', 'js/cards-status.js', 'js/cards-apps.js', 
+            'js/cards-settings.js', 'js/collapse.js', 'js/dialogs.js', 
+            'js/boot.js',
             'scripts/build.js', 'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js',
             'tests/lockbox.test.js'];
 
 const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
-               'index.html', 'pack.html', 'style.css', 'app.js', 'lockbox.js',
+               'index.html', 'pack.html', 'style.css', 'lockbox.js',
                'deploy-config.js', 'proxy.js', 'proxy.py', 'package.json',
                'scripts/build.js', '.github/workflows/ci.yml', '.github/workflows/release.yml',
                'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js', 'tests/lockbox.test.js',
                'tests/browser/harness.js', 'tests/browser/sealed.html',
-               'tests/browser/unsealed.html', 'tests/browser/authfail.html'];
+               'tests/browser/unsealed.html', 'tests/browser/authfail.html'].concat(JS.filter(f => f.startsWith('js/')));
 
 const problems = [];
 const note = (msg) => problems.push(msg);
@@ -42,12 +46,12 @@ for (const file of JS) {
 /* ── the version agrees with itself ────────────────────────────────── */
 
 const pkgVersion = JSON.parse(read('package.json')).version;
-const appMatch = read('app.js').match(/const APP_VERSION = '([^']+)'/);
+const appMatch = read('js/version.js').match(/const APP_VERSION = '([^']+)'/);
 
 if (!appMatch) {
-  note('app.js has no APP_VERSION constant');
+  note('js/version.js has no APP_VERSION constant');
 } else if (appMatch[1] !== pkgVersion) {
-  note(`version disagreement: package.json ${pkgVersion}, app.js ${appMatch[1]}`);
+  note(`version disagreement: package.json ${pkgVersion}, js/version.js ${appMatch[1]}`);
 }
 
 /* The release workflow lifts this section out to become the release page,
@@ -93,5 +97,5 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`lint ok: ${JS.length} scripts parse, version ${pkgVersion} agrees in ` +
-            'package.json, app.js and CHANGELOG.md, deploy-config.js is the placeholder, ' +
+            'package.json, js/version.js and CHANGELOG.md, deploy-config.js is the placeholder, ' +
             `punctuation clean across ${PROSE.length} files`);
