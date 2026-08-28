@@ -21,7 +21,7 @@ run(async () => {
   // no sealed config here to open with it, so it is dead weight and the
   // build should drop it at boot.
   localStorage.setItem('bravia-console-remember', 'YWJjZGVsZXRtZWlu');
-  a.load('/index.html');
+  await a.load('/index.html');
   await waitFor(() => a.$('settings-dialog') && a.$('settings-dialog').open, 'settings on first run');
   ok('a password left over from a deployed build is dropped',
      localStorage.getItem('bravia-console-remember') === null,
@@ -60,9 +60,8 @@ run(async () => {
      saved && saved.psk === 'typed-in-key' && saved.host === '127.0.0.1:1' && saved.interval === 9,
      JSON.stringify(saved));
 
-  a.win().location.reload();
-  await sleep(300);
-  await waitFor(() => { try { return a.read('cfg') !== null; } catch (e) { return false; } },
+  await a.reload();
+  await waitFor(() => a.read('cfg') !== null,
                 'the reloaded page to reuse the stored config');
   ok('stored config reused after reload', a.read('cfg').host === '127.0.0.1:1');
   ok('stored key reused after reload', a.read('getPsk()') === 'typed-in-key');
@@ -76,8 +75,8 @@ run(async () => {
 
   /* ── the packer ───────────────────────────────────────────────────── */
   const p = app(document.getElementById('packer'));
-  p.load('/pack.html');
-  await waitFor(() => p.loaded() && p.$('pack-form'), 'pack.html');
+  await p.load('/pack.html');
+  await waitFor(() => p.$('pack-form'), 'pack.html');
 
   p.$('pk-psk').value = 'packed-key';
   p.$('pk-password').value = 'one';

@@ -21,7 +21,7 @@ run(async () => {
   localStorage.clear();
   localStorage.setItem('bravia-console-config',
     JSON.stringify({ host: '10.9.9.9', psk: 'stale-old-key', interval: 3 }));
-  a.load('/index.html');
+  await a.load('/index.html');
 
   await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open, 'the lock');
   ok('starts at the unlock prompt', a.$('unlock-dialog').open);
@@ -166,8 +166,8 @@ run(async () => {
      first + ' then ' + saved());
 
   /* ── a remembered visit opens itself ────────────────────────────── */
-  reloadApp(a);
-  await waitFor(() => a.loaded() && a.read('cfg') !== null, 'the automatic unlock');
+  await reloadApp(a);
+  await waitFor(() => a.read('cfg') !== null, 'the automatic unlock');
   ok('no password prompt on a remembered visit', !a.$('unlock-dialog').open);
   ok('the console is unlocked', a.read('locked') === false);
   ok('the key came back with nobody typing', a.read('getPsk()') === 'super-secret-psk');
@@ -182,7 +182,7 @@ run(async () => {
 
   /* ── a saved password that is not the password ───────────────────── */
   setSaved(encodeSaved('not-the-password'));
-  reloadApp(a);
+  await reloadApp(a);
   await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open,
                 'the prompt after a wrong saved password');
   ok('a wrong saved password falls back to the prompt', a.$('unlock-dialog').open);
@@ -201,7 +201,7 @@ run(async () => {
                 encodeSaved(''), '\u0000\u0000', 'a'.repeat(4096)];
   for (const value of junk) {
     setSaved(value);
-    reloadApp(a);
+    await reloadApp(a);
     await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open,
                   'the prompt after ' + JSON.stringify(value.slice(0, 20)));
     ok('a junk saved password leaves the lock in place: ' + JSON.stringify(value.slice(0, 20)),
@@ -234,7 +234,8 @@ const SAVED_KEY = 'bravia-console-remember';
 
 /* Putting the same src back on an iframe navigates nowhere, and a test
    that believes it reloaded is a test that proves nothing, so every
-   visit gets its own URL. The server ignores the query. */
+   visit gets its own URL. The server ignores the query. Awaited, like
+   every load here: the page arrives after the call, not during it. */
 let visits = 0;
 const reloadApp = (a) => a.load('/index.html?visit=' + (++visits));
 
@@ -259,7 +260,7 @@ function decodeSaved(value) {
 /* Back to a freshly loaded, locked page with nothing saved. */
 async function relock(a) {
   forgetSaved();
-  reloadApp(a);
+  await reloadApp(a);
   await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open, 'a fresh lock');
 }
 

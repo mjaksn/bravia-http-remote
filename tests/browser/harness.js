@@ -41,6 +41,21 @@ async function waitFor(condition, label, timeoutMs = 15000) {
 /* A handle on the app under test. */
 function app(iframe) {
   const win = () => iframe.contentWindow;
+  // An iframe starts on the initial empty document, and that one is a
+  // special case: the browser reuses its window for the first navigation
+  // out of it, so a stamp put there would survive into the page under test
+  // and never clear. It needs no stamp anyway, because a load out of it is
+  // finished exactly when the document is no longer about:blank.
+  const blank = () => { try { return win().location.href === 'about:blank'; } catch (e) { return false; } };
+  // True once a document that is neither blank nor on its way out has
+  // finished loading. Reads across a navigation throw, so all are guarded.
+  const settled = () => {
+    try {
+      return win().location.href !== 'about:blank' &&
+        win().__outgoing === undefined &&
+        win().document.readyState === 'complete';
+    } catch (e) { return false; }
+  };
   return {
     win,
     $: (id) => win().document.getElementById(id),
@@ -49,11 +64,36 @@ function app(iframe) {
     read: (expression) => win().eval(expression),
     fire: (id, type) => win().document.getElementById(id)
       .dispatchEvent(new (win().Event)(type, { cancelable: true, bubbles: true })),
-    load: (src) => { iframe.src = src; },
+    // Changing an iframe's src does not take effect at once. The outgoing
+    // document stays in place, and goes on answering every read here, until
+    // the response for the new one arrives. A suite that asserts straight
+    // after a load is therefore liable to be talking to the page it thought
+    // it had just left, which is worse than it sounds: the checks pass, but
+    // against the wrong document, and the same race loses whenever the
+    // navigation happens to win it. That is a test that proves nothing on a
+    // good day and fails on a bad one.
+    //
+    // So the outgoing document is stamped before the src changes, and the
+    // load is not finished until a document without that stamp is up and
+    // complete. A window that has never been navigated carries no stamp,
+    // so the first load waits only for the document to arrive.
+    load: async (src) => {
+      if (!blank()) { try { win().__outgoing = true; } catch (e) { /* mid-navigation */ } }
+      iframe.src = src;
+      return waitFor(settled, 'the page at ' + src);
+    },
+    // The same wait, for the one navigation that is not a new URL. Putting
+    // the same src back navigates nowhere, so a reload is the only way to
+    // revisit a page, and it needs the stamp exactly as a load does.
+    reload: async () => {
+      try { win().__outgoing = true; } catch (e) { /* mid-navigation */ }
+      win().location.reload();
+      return waitFor(settled, 'the reloaded page');
+    },
     // An element can exist before the script that gives it its listeners
     // has run, so readiness means the document finished loading, not that
     // the markup is there.
-    loaded: () => { try { return win().document.readyState === 'complete'; } catch (e) { return false; } },
+    loaded: settled,
   };
 }
 
