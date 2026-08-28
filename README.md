@@ -218,8 +218,12 @@ installer, a build step, or a machine with no display, `seal.py` writes the same
 file from a shell:
 
 ```bash
-python seal.py --host 192.168.1.50 --psk 0000 --out ~/deploy-config.js
+python seal.py --host 192.168.1.50 --psk-file ./psk --out ~/deploy-config.js
 ```
+
+`--psk-file` rather than `--psk`, because an argument is visible in `ps` to
+every user on the machine. `--psk` exists for a quick run at your own keyboard
+and is the wrong thing in a script.
 
 It asks for the password twice without echoing it, seals the details, opens the
 result again to prove the file works, and writes the file.

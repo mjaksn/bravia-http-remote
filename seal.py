@@ -8,8 +8,12 @@ opens with the same password, because both implement the one format that
 lockbox.js reads.
 
 Usage:
-    python seal.py --host 192.168.1.50 --psk 0000 [--interval 5]
-    python seal.py --host 192.168.1.50 --psk 0000 --out /srv/bravia/deploy-config.js
+    python seal.py --host 192.168.1.50 --psk-file ./psk --out ~/deploy-config.js
+    python seal.py --host 192.168.1.50 --psk 0000 --out ~/deploy-config.js
+
+The second form is fine at a keyboard and wrong in a script: an argument is
+visible in `ps` to every user on the machine, and --psk-file exists for that.
+--out belongs outside any checkout holding a Dockerfile; see --force.
 
 The password is asked for, twice, with the typing hidden. It is never taken
 as an argument, because an argument is visible in `ps` to every user on the
@@ -196,7 +200,12 @@ def main() -> int:
                             "For unattended use; delete the file afterwards"
                         ))
     parser.add_argument("--force", action="store_true",
-                        help="overwrite the output file if it already exists")
+                        help=(
+                            "overwrite the output file if it exists, AND write it even "
+                            "inside a Docker build context. The second is the one to "
+                            "think about: it removes a guard that keeps the sealed "
+                            "config out of published images"
+                        ))
     args = parser.parse_args()
 
     if args.iterations < 1:
@@ -210,23 +219,36 @@ def main() -> int:
         print("  warning: %d rounds is weaker than the %d this format expects"
               % (args.iterations, DEFAULT_ITERATIONS), file=sys.stderr)
 
-    out = Path(args.out)
+    out = Path(args.out).resolve()
     # A build context is the one place this file must never be written. An
     # image built with it inside publishes the sealed blob to whoever can
     # pull the image, which turns "somebody on my LAN" into "anybody, for
     # as long as the registry keeps the layer".
-    if (out.parent / "Dockerfile").exists() and not args.force:
+    #
+    # Every ancestor is checked, not just the immediate parent. A context is
+    # rooted at the Dockerfile and reaches down through every subdirectory
+    # under it, so `--out content/deploy-config.js` from a checkout is inside
+    # one just as surely as `--out deploy-config.js` is, and `COPY content
+    # ./content` would carry it in.
+    context = next((d for d in out.parents if (d / "Dockerfile").exists()), None)
+    if context is not None and not args.force:
         raise SystemExit(
-            "seal.py: %s sits beside a Dockerfile. Writing the sealed config into a\n"
-            "build context bakes it into any image built there, and a published image\n"
-            "hands it to anyone who can pull it. Mount it at run time instead, or pass\n"
-            "--force if you are certain." % out
+            "seal.py: %s is inside a Docker build context, rooted at %s.\n"
+            "Writing the sealed config there bakes it into any image built from that\n"
+            "context, and a published image hands it to anyone who can pull it. Mount\n"
+            "it at run time instead, or pass --force if you are certain."
+            % (out, context)
         )
     if out.exists() and not args.force:
         raise SystemExit("seal.py: %s already exists. Pass --force to replace it." % out)
 
+    # Only a trailing newline comes off, not surrounding whitespace. A
+    # password or key with a deliberate leading or trailing space has to seal
+    # as the same thing however it was supplied, or an operator who recorded
+    # exactly what they wrote cannot sign in with it. Every editor adds the
+    # newline; nothing adds the spaces.
     if args.psk_file:
-        psk = Path(args.psk_file).read_text(encoding="utf-8").strip()
+        psk = Path(args.psk_file).read_text(encoding="utf-8").rstrip("\r\n")
         if not psk:
             raise SystemExit("seal.py: %s is empty" % args.psk_file)
     elif args.psk:
@@ -235,7 +257,7 @@ def main() -> int:
         raise SystemExit("seal.py: one of --psk or --psk-file is required")
 
     if args.password_file:
-        password = Path(args.password_file).read_text(encoding="utf-8").strip()
+        password = Path(args.password_file).read_text(encoding="utf-8").rstrip("\r\n")
         if not password:
             raise SystemExit("seal.py: %s is empty" % args.password_file)
     else:

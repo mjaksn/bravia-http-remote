@@ -14,7 +14,14 @@
 # One stage, because there is nothing to build. proxy.py is standard library
 # only, so there are no dependencies to install, nothing to pin in a lock file
 # and no wheel to compile. The base image digest is the only pin here.
-FROM python:3.13-slim@sha256:7e3a6aca9d74f93cca21a91d86a8dad8c34749afd5b4a98ee481c9c47b9f5ed4
+#
+# A patch tag rather than the rolling 3.13-slim, and that is not fussiness.
+# The rolling tags are rebuilt every few days, so whatever digest they point
+# at is always a few days old, and nothing that young may be used here. A
+# patch tag stops moving once the next one ships, so it can be both specific
+# and old enough. Check the age before bumping it: this one was 23 days when
+# it was pinned.
+FROM python:3.13.14-slim@sha256:9662417aace5ae7b8e2609cce472b72a8958e134ba372808abe9cc1a0c0125e6
 
 LABEL org.opencontainers.image.title="Bravia Console" \
       org.opencontainers.image.description="Single-page controller for Sony Bravia displays over the Bravia HTTP REST API" \

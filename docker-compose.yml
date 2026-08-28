@@ -46,7 +46,7 @@ services:
     # Dockerfile, which is the guard that keeps a sealed config from being
     # built into a published image.
     #
-    #   python seal.py --host 192.168.1.50 --psk 0000 --out ~/deploy-config.js
+    #   python seal.py --host 192.168.1.50 --psk-file ./psk --out ~/deploy-config.js
     #
     #volumes:
-    #  - ./deploy-config.js:/app/deploy-config.js:ro
+    #  - ~/deploy-config.js:/app/deploy-config.js:ro

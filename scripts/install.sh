@@ -50,15 +50,15 @@ Options:
   --no-start           install but do not start it
   --help               show this message
 
-Neither the pre-shared key nor the deployment password is ever taken as an
-argument, or passed as one to seal.py, because an argument is visible in `ps` to
-every user on the machine. Both are asked for, or read from a file for
-unattended use. Delete those files afterwards.
+This script never takes the pre-shared key or the deployment password as an
+argument, and never passes one to seal.py either, because an argument is visible
+in `ps` to every user on the machine. Both are asked for, or read from a file
+for unattended use; delete those files afterwards. seal.py itself does accept
+--psk, for a quick run at a keyboard.
 USAGE
 }
 
-say() { printf '  %s
-' "$*"; }
+say() { printf '  %s\n' "$*"; }
 die() { echo "install.sh: $*" >&2; exit 1; }
 
 # A two-argument flag with nothing after it would otherwise `shift 2` off the
@@ -225,6 +225,16 @@ check_port "$PORT" "the console port"
 # control. The Docker install always binds every interface inside the
 # container and lets the publish decide, which is why this is asked for only
 # on the systemd path.
+if [ "$MODE" = "docker" ] && [ -n "$BIND" ]; then
+    # Silently dropping a flag is bad enough; silently dropping one whose whole
+    # purpose is to narrow what can reach the console is worse. The container
+    # always binds every interface inside its own namespace, and what is
+    # actually exposed is decided by the published port.
+    die "--bind is for the systemd install. Under Docker the exposure is set by the
+       published port instead: edit ports: in $COMPOSE_FILE to publish on the
+       address you want, for example 127.0.0.1:$PORT:8585"
+fi
+
 if [ "$MODE" = "systemd" ] && [ -z "$BIND" ]; then
     BIND="$(ask "Address to serve on, 0.0.0.0 for the whole network" "0.0.0.0")"
 fi
@@ -247,16 +257,32 @@ if [ -z "$LOCK" ]; then
 fi
 
 SEALED=0
-if [ "$LOCK" -eq 1 ]; then
+SEALED_FILE="$CONFIG_DIR/deploy-config.js"
+mkdir -p "$CONFIG_DIR"
+chmod 0755 "$CONFIG_DIR"
+
+# A config sealed by an earlier run keeps being used, whatever was asked for
+# this time.
+#
+# --no-lock means "do not seal a new one", never "unlock the deployment". An
+# upgrade that quietly reopened a locked console to everyone on the network
+# would be the worst thing this script could do, and running it again to pick
+# up a new version is the most ordinary reason to run it at all. Deleting the
+# file is how you unlock, and the closing banner says so.
+if [ -f "$SEALED_FILE" ]; then
+    SEALED=1
+    say "keeping the sealed config already at $SEALED_FILE"
+    say "delete that file and run this again to change it, or to unlock"
+
+elif [ "$LOCK" -eq 1 ]; then
     find_python || die "python3 is needed to seal a config, and was not found"
 
     if [ -n "$PSK_FILE" ]; then
         [ -f "$PSK_FILE" ] || die "$PSK_FILE does not exist"
-        PSK="$(cat "$PSK_FILE")"
     else
-        PSK="$(ask_secret "The display's pre-shared key")"
+        PSK="$(ask_secret "The pre-shared key set on the display")"
+        [ -n "$PSK" ] || die "the pre-shared key is required in order to seal a config"
     fi
-    [ -n "$PSK" ] || die "the pre-shared key is required in order to seal a config (--psk-file)"
 
     if [ -z "$INTERVAL" ]; then
         INTERVAL="$(ask "Starting refresh interval in seconds" "5")"
@@ -265,50 +291,50 @@ if [ "$LOCK" -eq 1 ]; then
         ''|*[!0-9]*) die "the refresh interval must be a number, not '$INTERVAL'" ;;
     esac
 
-    mkdir -p "$CONFIG_DIR"
-    chmod 0755 "$CONFIG_DIR"
-    SEALED_FILE="$CONFIG_DIR/deploy-config.js"
-
-    if [ -f "$SEALED_FILE" ]; then
-        say "keeping the existing sealed config at $SEALED_FILE"
-        say "delete it and run this again to change the password or the key"
-        SEALED=1
+    # The key reaches seal.py in a file, never as an argument. An argument is
+    # visible in `ps` to every user on this machine for as long as the seal
+    # takes, which is 120,000 rounds of PBKDF2 with the key sitting there.
+    #
+    # A file the caller supplied is handed straight over. Reading it into a
+    # variable first would strip the trailing whitespace that `$(cat)` always
+    # eats, and the key would seal as something they did not write.
+    psk_tmp_ours=0
+    if [ -n "$PSK_FILE" ]; then
+        psk_tmp="$PSK_FILE"
     else
-        # seal.py asks for the password itself, twice, without echoing it, and
-        # verifies the file opens again before handing it over. Its --out is
-        # given a path outside the checkout so that a sealed config can never
-        # end up in a build context, which is the one place it must not be.
-        #
-        # The key goes over in a file, never as an argument. An argument is
-        # visible in `ps` to every user on this machine for as long as the seal
-        # takes, which is 120,000 rounds of PBKDF2 with the key sitting there.
-        # Reading it back with no echo and then putting it in argv would undo
-        # the whole point of asking for it that way.
         psk_tmp="$(mktemp)"
+        psk_tmp_ours=1
         chmod 0600 "$psk_tmp"
-        # Cleared on every exit, including the die paths below and a Ctrl-C
-        # part way through the derivation.
+        # Cleared on every exit, including the die paths and a Ctrl-C part
+        # way through the derivation.
         trap 'rm -f "$psk_tmp"' EXIT INT TERM
         printf '%s' "$PSK" > "$psk_tmp"
+    fi
 
-        if [ -n "$PASSWORD_FILE" ]; then
-            "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
-                --interval "$INTERVAL" --out "$SEALED_FILE" \
-                --password-file "$PASSWORD_FILE" >/dev/null
-        elif [ "$INTERACTIVE" -eq 0 ] || [ ! -t 0 ]; then
-            die "sealing needs a password: use --password-file, or drop --lock"
-        else
-            echo
-            "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
-                --interval "$INTERVAL" --out "$SEALED_FILE" >/dev/null
-        fi
+    # seal.py asks for the password itself, twice, without echoing it, and
+    # verifies the file opens again before handing it over. --out is a path
+    # outside any checkout, so a sealed config can never land in a build
+    # context, which is the one place it must not be.
+    if [ -n "$PASSWORD_FILE" ]; then
+        "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
+            --interval "$INTERVAL" --out "$SEALED_FILE" \
+            --password-file "$PASSWORD_FILE" >/dev/null
+    elif [ "$INTERACTIVE" -eq 0 ] || [ ! -t 0 ]; then
+        die "sealing needs a password: use --password-file, or drop --lock"
+    else
+        echo
+        "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
+            --interval "$INTERVAL" --out "$SEALED_FILE" >/dev/null
+    fi
 
+    if [ "$psk_tmp_ours" -eq 1 ]; then
         rm -f "$psk_tmp"
         trap - EXIT INT TERM
-        chmod 0644 "$SEALED_FILE"
-        say "sealed the connection details into $SEALED_FILE"
-        SEALED=1
     fi
+
+    chmod 0644 "$SEALED_FILE"
+    say "sealed the connection details into $SEALED_FILE"
+    SEALED=1
 fi
 
 # The key has done its work. Drop it rather than leaving it in the environment
