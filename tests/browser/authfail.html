@@ -18,7 +18,7 @@ run(async () => {
 
   localStorage.clear();
   localStorage.setItem('bravia-console-interval', '6');
-  a.load('/index.html');
+  await a.load('/index.html');
 
   await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open, 'the lock');
   ok('the interval preference survives a locked boot',
