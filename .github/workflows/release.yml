@@ -47,6 +47,24 @@ jobs:
           [ "$tag" = "$pkg" ] || { echo "tag does not match package.json" >&2; exit 1; }
           [ "$tag" = "$app" ] || { echo "tag does not match app.js" >&2; exit 1; }
 
+      - name: The placeholder, and nothing else, goes in the image
+        # A sealed deploy-config.js inside a published image hands the sealed
+        # blob to anyone who can pull it, and registry layers outlive any
+        # attempt to take it back. Checked here rather than trusted, because
+        # the file is one `git add` away from being the wrong one.
+        #
+        # In this job rather than beside the build that makes the image,
+        # because the image jobs are calls to a shared workflow now and this
+        # refusal belongs to this project rather than to the plumbing. They
+        # wait on this job, so nothing is published before it has passed.
+        # `node tests/lint.js` below asserts the same thing; this says it
+        # where a reader looking for the guarantee will find it.
+        run: |
+          grep -q 'BRAVIA_DEPLOY_CONFIG = null' deploy-config.js || {
+            echo "::error::deploy-config.js is not the placeholder; refusing to publish"
+            exit 1
+          }
+
       - name: Lint and unit tests
         run: |
           node tests/lint.js
@@ -75,144 +93,25 @@ jobs:
 
   docker:
     name: build and push the image
-    needs: [build] # only once the versions are proved equal
-    runs-on: ubuntu-latest
+    # Behind `build`, and that is what keeps a sealed deploy-config.js out of
+    # a published image: `build` lints, the lint refuses anything but the
+    # placeholder, and nothing here runs until it has passed.
+    needs: [build]
     permissions:
       contents: read
       packages: write        # GHCR, through the token this job already has
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      # QEMU is what makes the two arm legs possible on an x86 runner. They
-      # stay quick because there is nothing to compile: the app is static files
-      # and proxy.py is standard library only.
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-
-      - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Work out the tags
-        id: meta-ghcr
-        # Both registries from one step, so the two can never be tagged
-        # differently. The version comes from the tag, which the build job has
-        # already checked against package.json and app.js.
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-          labels: |
-            org.opencontainers.image.version=${{ github.ref_name }}
-          # auto, not true: a prerelease tag such as v1.1.0-rc1 would
-          # otherwise move `latest` onto it, and `latest` is what an
-          # unqualified docker pull takes.
-          flavor: latest=auto
-
-      - name: The placeholder, and nothing else, goes in the image
-        # A sealed deploy-config.js inside a published image hands the sealed
-        # blob to anyone who can pull it, and registry layers outlive any
-        # attempt to take it back. Checked here rather than trusted, because
-        # the file is one `git add` away from being the wrong one.
-        run: |
-          grep -q 'BRAVIA_DEPLOY_CONFIG = null' deploy-config.js || {
-            echo "::error::deploy-config.js is not the placeholder; refusing to publish"
-            exit 1
-          }
-
-      - name: Build and push to GHCR
-        # GHCR authenticates with the workflow's own token, so this is the
-        # registry that cannot fail for want of a secret. The Docker Hub
-        # mirror is a separate job for that reason.
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
-          tags: ${{ steps.meta-ghcr.outputs.tags }}
-          labels: ${{ steps.meta-ghcr.outputs.labels }}
-          provenance: true
-          sbom: true
+    uses: mjaksn/workflows/.github/workflows/publish-ghcr.yml@4e3dd222b30281d7c355286508542800ca5de33d
 
   docker-hub:
     name: mirror the image to Docker Hub
+    # Called separately rather than as a second job inside the workflow above,
+    # and that is the point of it. A called workflow succeeds only when every
+    # job in it succeeds, so one call covering both registries would let a
+    # Docker Hub outage hold up the release page waiting on `docker`. Apart,
+    # a rotated token or an outage there costs Docker Hub and nothing else.
     needs: [build]
-    runs-on: ubuntu-latest
-    # A job of its own, and that is the point of it. Docker Hub is the one
-    # registry here that needs a stored secret, so it is the one that can
-    # fail for a reason nothing in this repository controls: a rotated
-    # token, a fork without the secrets, an outage. None of that should
-    # cost the GHCR image or the release page, and in a separate job it
-    # cannot. This job failing means exactly what it says.
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-
-      - name: Work out the Docker Hub tags
-        id: meta-hub
-        # The same rules against the other registry, so the two can never be
-        # tagged differently.
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: |
-            docker.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-          labels: |
-            org.opencontainers.image.version=${{ github.ref_name }}
-          flavor: latest=auto
-      - name: Log in to Docker Hub
-        # After GHCR is safely published. A stored access token, and it needs
-        # write access rather than only push, because the description step
-        # below edits the repository.
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: The placeholder, and nothing else, goes in the image
-        # The same refusal the GHCR job makes. A guard that protects one
-        # registry and not the other is not a guard: this is the check that
-        # keeps a sealed deploy-config.js out of a published image, and both
-        # jobs build from the same context.
-        run: |
-          grep -q 'BRAVIA_DEPLOY_CONFIG = null' deploy-config.js || {
-            echo "::error::deploy-config.js is not the placeholder; refusing to publish"
-            exit 1
-          }
-
-      - name: Push to Docker Hub
-        # Built a second time rather than retagged. This is a separate job on a
-        # fresh runner with nothing cached across the two, so the context is
-        # built again from scratch. It costs seconds, because nothing here is
-        # compiled, and it buys the independence the split is for. The base
-        # image is pinned by digest, so both builds have the same inputs.
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
-          tags: ${{ steps.meta-hub.outputs.tags }}
-          labels: ${{ steps.meta-hub.outputs.labels }}
-          provenance: true
-          sbom: true
-      - name: Put the README on the Docker Hub page
-        # Docker Hub's overview is a field on the repository, not part of the
-        # image, so neither the push nor the labels above reach it. GHCR needs
-        # no equivalent: it reads the description off the image itself.
-        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          readme-filepath: ./README.md
+    uses: mjaksn/workflows/.github/workflows/mirror-dockerhub.yml@4e3dd222b30281d7c355286508542800ca5de33d
+    secrets: inherit
 
   release:
     # Behind the image as well as the build. The notes this lifts out of
