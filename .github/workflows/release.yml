@@ -172,8 +172,11 @@ jobs:
           }
 
       - name: Push to Docker Hub
-        # The same build, from cache, retagged. It still fails the job loudly
-        # if it goes wrong; what it can no longer do is prevent the GHCR push.
+        # Built a second time rather than retagged. This is a separate job on a
+        # fresh runner with nothing cached across the two, so the context is
+        # built again from scratch. It costs seconds, because nothing here is
+        # compiled, and it buys the independence the split is for. The base
+        # image is pinned by digest, so both builds have the same inputs.
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
