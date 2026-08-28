@@ -76,4 +76,4 @@ USER bravia
 # exactly when a sealed deploy-config.js earns its keep.
 #
 # exec so that the interpreter is PID 1 and gets the signals directly.
-ENTRYPOINT ["sh", "-c", "exec python proxy.py \"${BRAVIA_TV:?set BRAVIA_TV to the display address, for example 192.168.1.50}\" \"${BRAVIA_PORT}\" 0.0.0.0"]
+ENTRYPOINT ["sh", "-c", "exec python proxy.py \"${BRAVIA_TV:?set BRAVIA_TV to the display address, for example 192.168.1.50}\" \"${BRAVIA_PORT:-8585}\" 0.0.0.0"]

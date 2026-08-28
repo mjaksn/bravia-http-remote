@@ -123,7 +123,18 @@ def open_sealed(password: str, blob: dict) -> dict:
     """
     if blob.get("v") != 1 or blob.get("kdf") != "pbkdf2-hmac-sha256":
         raise ValueError("unrecognised configuration format")
-    iterations = int(blob["iterations"])
+    # Every malformed field in here raises ValueError, which is what the
+    # docstring promises and what a caller will be catching. A missing or
+    # non-numeric iteration count would otherwise come out as KeyError or
+    # TypeError and go straight past them.
+    try:
+        iterations = int(blob["iterations"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("corrupt configuration") from None
+    # The same ceiling lockbox.js enforces, and for the same reason: a blob
+    # claiming a billion rounds should be refused rather than spun on.
+    if iterations < 1 or iterations > MAX_ITERATIONS:
+        raise ValueError("unusable iteration count")
     salt = base64.b64decode(blob["salt"])
     nonce = base64.b64decode(blob["nonce"])
     ct = base64.b64decode(blob["ct"])

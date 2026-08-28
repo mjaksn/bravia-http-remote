@@ -215,6 +215,16 @@ if [ -z "$TV" ]; then
 fi
 [ -n "$TV" ] || die "the display's address is required (--tv)"
 
+# The address is interpolated into a YAML scalar and into an ExecStart line,
+# and each has characters that mean something there: # opens a comment, [
+# opens a flow sequence, and % is a systemd specifier. Rather than quote for
+# three grammars, refuse anything that is not a host, an address and an
+# optional port. The result is a message pointing at the input, instead of a
+# unit that will not start or a compose file that is quietly wrong.
+case "$TV" in
+    *[!A-Za-z0-9.:_-]*) die "the display's address may only contain letters, digits, dot, colon, underscore and hyphen: '$TV'" ;;
+esac
+
 if [ -z "$PORT" ]; then
     PORT="$(ask "Port to serve the console on" "8585")"
 fi
@@ -470,7 +480,7 @@ services:
     restart: unless-stopped
 
     environment:
-      BRAVIA_TV: $TV
+      BRAVIA_TV: "$TV"
       BRAVIA_PORT: 8585
 
     ports:
@@ -494,10 +504,15 @@ fi
 
 # == what to do next =========================================================
 
-# `hostname -I` is Linux and prints nothing on some systems. awk exits 0 on
-# empty input, so a `|| echo localhost` after it would never run: the fallback
-# has to test the value rather than the pipeline's status.
-HOSTADDR="$(hostname -I 2>/dev/null | awk '{print $1}')"
+# `hostname -I` is Linux and GNU. busybox has -i and not -I, and other
+# systems have neither, so this is allowed to come back with nothing.
+#
+# Two things have to be right for that to be harmless. `|| true` keeps
+# `pipefail` from handing a failed `hostname` to `set -e`, which would end a
+# completely successful install here, silently, with no "Done." and a non-zero
+# status. And the fallback tests the value rather than the pipeline, because
+# awk exits 0 on empty input and a `||` after it would never run.
+HOSTADDR="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 [ -n "$HOSTADDR" ] || HOSTADDR="localhost"
 
 echo

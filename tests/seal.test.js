@@ -138,11 +138,19 @@ try {
   // hanging on it, so a config sealed above that is one the console can never
   // open, and seal.py opening its own work would not notice. This is the
   // silent divergence these two files exist to be checked against.
+  // Driven from lockbox.js's own ceiling, not from a number copied in here.
+  // Hardcoding it would let the browser lower its limit while seal.py kept
+  // the old one, and this suite would stay green while every config sealed
+  // between the two became unopenable.
+  eq('lockbox.js publishes the ceiling it enforces',
+     typeof L.MAX_ITERATIONS, 'number');
+  const overCeiling = String(L.MAX_ITERATIONS + 1);
+
   let ceiling = '';
   try {
     execFileSync(PY, [path.join(ROOT, 'seal.py'),
                       '--host', SECRET.host, '--psk', SECRET.psk,
-                      '--iterations', '3000000',
+                      '--iterations', overCeiling,
                       '--out', path.join(work, 'too-many.js'),
                       '--password-file', pwFile], { stdio: 'pipe' });
   } catch (e) {
@@ -150,6 +158,23 @@ try {
   }
   ok('seal.py refuses an iteration count lockbox.js would reject',
      /refuses to open/.test(ceiling), ceiling.slice(0, 200));
+
+  // And the number it refuses at is the same one. A seal.py with a higher
+  // ceiling would accept this and hand back a file the console cannot read.
+  ok('and refuses at the same number lockbox.js does',
+     ceiling.includes(String(L.MAX_ITERATIONS)), ceiling.slice(0, 200));
+
+  // The other half: one round under the ceiling has to be accepted by both.
+  const atCeiling = path.join(work, 'at-ceiling.js');
+  execFileSync(PY, [path.join(ROOT, 'seal.py'),
+                    '--host', SECRET.host, '--psk', SECRET.psk,
+                    '--iterations', String(L.MAX_ITERATIONS),
+                    '--out', atCeiling,
+                    '--password-file', pwFile], { stdio: 'pipe' });
+  const atWin = {};
+  new Function('window', fs.readFileSync(atCeiling, 'utf8'))(atWin);
+  const atOpened = L.open(PASSWORD, atWin.BRAVIA_DEPLOY_CONFIG);
+  eq('a config sealed exactly at the ceiling still opens', atOpened.host, SECRET.host);
 
   /* ── the guard that keeps a sealed file out of an image ─────────────── */
 
