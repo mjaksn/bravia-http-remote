@@ -1451,16 +1451,39 @@ function applyUnlockedSecret(secret) {
    saved, a saved value that will not parse, and one holding the wrong
    password. A password that no longer works is dropped rather than kept
    to fail again. */
-function unlockFromSavedPassword() {
+async function unlockFromSavedPassword() {
   const password = readRememberedPassword();
   if (password === null) return false;
+
+  // The prompt goes up before the key derivation rather than after it, and
+  // says what is happening. Deriving first would hold the main thread for
+  // the whole of the stretching with `empty-state` already hidden and no
+  // dialog up, which on a phone is several seconds of blank, frozen page.
+  // The same stall would also delay the prompt appearing when a saved
+  // password has gone stale against a repacked deployment.
+  //
+  // The same paintPause as the typed path, and for the same reason: the
+  // "Signing you in" state has to reach the screen before the main thread
+  // disappears into the KDF.
+  openUnlock();
+  const btn = $('btn-unlock');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Signing you in…';
+  await paintPause();
+
   let secret = null;
   try {
     secret = Lockbox.open(password, sealedCfg);
   } catch {
     forgetPassword();
+    btn.disabled = false;
+    btn.textContent = label;
     return false;
   }
+  btn.disabled = false;
+  btn.textContent = label;
+  // Clears `locked` and closes the prompt this function opened.
   applyUnlockedSecret(secret);
   return true;
 }
@@ -1545,7 +1568,7 @@ async function main() {
     // left behind. What a deployed page may carry between visits is the
     // preferences, and a password someone asked it to keep.
     localStorage.removeItem(LS_KEY);
-    if (!unlockFromSavedPassword()) openUnlock();
+    if (!await unlockFromSavedPassword()) openUnlock();
     return;
   }
 

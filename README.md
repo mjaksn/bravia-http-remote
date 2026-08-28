@@ -11,7 +11,7 @@ cards cover power (powered on, with standby and reboot), the current input
 (HDMI 2), audio, seven external inputs with connected-device dots, an app
 filter, remote keys grouped by navigation, playback, channels and numbers,
 picture and sound settings as sliders and dropdowns, speaker routing, and
-system details.](content/screenshot.png)
+system details.](https://raw.githubusercontent.com/mjaksn/bravia-http-remote/main/content/screenshot.png)
 
 The UI is a status dashboard, not a picture of a remote: everything the TV reports
 is visible at once, and every supported action is one click away.
@@ -128,6 +128,67 @@ the hostname field blank in settings. (Defaults: port 8585, bound to 127.0.0.1.
 Passing `... 8585 0.0.0.0` exposes it to your LAN; anyone who can reach the port
 can then control the TV.)
 
+### Option D: Docker
+
+An image is published on every release, to
+[GHCR](https://github.com/mjaksn/bravia-http-remote/pkgs/container/bravia-http-remote)
+and [Docker Hub](https://hub.docker.com/r/mjaksn/bravia-http-remote), for
+`linux/amd64`, `linux/arm64` and `linux/arm/v7`.
+
+It runs the proxy from Option C rather than serving the files alone, and that is
+deliberate. The reason to run this in a container is to reach it from a phone or
+a laptop, which puts the page and the display on different origins, which is
+exactly the case a missing CORS preflight breaks.
+
+```bash
+docker run -d --name bravia-console --restart unless-stopped     -e BRAVIA_TV=192.168.1.50 -p 8585:8585     ghcr.io/mjaksn/bravia-http-remote:latest
+```
+
+Then open <http://this-machine:8585>. `docker-compose.yml` is the same thing as
+a Compose file. `BRAVIA_TV` has no default: a proxy pointed at nothing starts
+happily and fails on every request, so the container refuses to start without it.
+
+Published on every interface, as above, anyone on your network who loads the
+page can drive the display. That is the case
+[a locked copy](#deploying-a-locked-copy) exists for, and it is the usual reason
+to want one. Publish to `127.0.0.1:8585:8585` instead if you only ever want it
+from the machine running it.
+
+**A sealed config is mounted, never built in:**
+
+```bash
+docker run ... -v ./deploy-config.js:/app/deploy-config.js:ro ...
+```
+
+The image ships the placeholder. Baking a sealed one into a published image
+hands the blob to anyone who can pull it, and registry layers outlive any
+attempt to take it back, which turns "someone on my network could attack this
+offline" into "anyone could, forever". `seal.py` refuses to write into a
+directory holding a `Dockerfile` for the same reason, and both CI and the
+release workflow check that the image is carrying the placeholder.
+
+## Installing it
+
+`scripts/install.sh` sets the console up as either a systemd service or a Docker
+container, and offers to seal a locked config on the way:
+
+```bash
+sudo scripts/install.sh
+```
+
+It asks which, then asks for the display's address, the pre-shared key and the
+port. Every answer can be given as a flag instead, and `--non-interactive`
+refuses to guess rather than hanging on a prompt:
+
+```bash
+sudo scripts/install.sh --docker --tv 192.168.1.50 --port 8585     --lock --psk-file ./psk --password-file ./pw --non-interactive
+```
+
+Neither the pre-shared key nor the deployment password is ever taken as an
+argument, or passed as one to `seal.py`, because an argument is visible in `ps`
+to every user on the machine. Both are asked for, or read from a file. Delete
+those files afterwards.
+
 ## Deploying a locked copy
 
 Left alone, the app asks each browser for the hostname and the pre-shared key and
@@ -149,6 +210,35 @@ keeps and what it costs.
    works, and offers it for download as `deploy-config.js`.
 4. Put that file next to `index.html`, replacing the placeholder the repo ships,
    and deploy the folder however you were going to.
+
+### Sealing without a browser
+
+`pack.html` is the right tool when somebody is sitting at a keyboard. For an
+installer, a build step, or a machine with no display, `seal.py` writes the same
+file from a shell:
+
+```bash
+python seal.py --host 192.168.1.50 --psk 0000 --out ~/deploy-config.js
+```
+
+It asks for the password twice without echoing it, seals the details, opens the
+result again to prove the file works, and writes the file.
+
+**Write it outside the checkout**, as above. `seal.py` refuses to write into a
+directory holding a `Dockerfile`, which this repository root is, so a bare
+`--out deploy-config.js` from a clone is turned away on purpose: a sealed config
+in the working tree is one `docker build` away from being published inside an
+image. It also refuses to overwrite an existing file, and the repository ships
+the placeholder.
+
+The password is never taken as an argument, since an argument is visible in
+`ps`. For unattended use there is `--password-file`, and `--psk-file` for the
+same reason; delete both afterwards.
+
+It is the same format, not a similar one: `tests/seal.test.js` has `seal.py` and
+`lockbox.js` each open what the other sealed, in both directions, on every CI
+run. A sealer that only checked its own work would pass just as happily with
+both halves wrong together.
 
 To go back to the ordinary behavior, delete `deploy-config.js` or set
 `window.BRAVIA_DEPLOY_CONFIG` back to `null`. To change the address, the key or

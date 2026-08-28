@@ -12,6 +12,37 @@ release page.
 
 ### Added
 
+- **A container image**, published to `ghcr.io/mjaksn/bravia-http-remote` and
+  `docker.io/mjaksn/bravia-http-remote` on every release, for `linux/amd64`,
+  `linux/arm64` and `linux/arm/v7`. It runs `proxy.py` rather than serving the
+  files alone, because reaching the console from a phone puts the page and the
+  display on different origins, which is the case a Bravia's missing CORS
+  preflight breaks. `docker-compose.yml` is a worked example. The image ships
+  the placeholder `deploy-config.js` and never a sealed one: a sealed blob
+  inside a published image can be pulled and attacked offline by anyone, and
+  registry layers outlive any attempt to take it back. A sealed config is
+  mounted at run time instead, and both the release workflow and CI check that
+  the image is carrying the placeholder.
+- **`seal.py`**, which writes a password-protected `deploy-config.js` from a
+  shell, for an installer or a machine with no display. It is the same format
+  `pack.html` produces and the console opens, implemented a second time against
+  Python's standard library. `tests/seal.test.js` has each implementation open
+  what the other sealed, in both directions, because a sealer that checks its
+  own work passes just as happily with both halves wrong together. The password
+  is asked for rather than taken as an argument, since an argument is visible in
+  `ps`, and it refuses to write into a directory holding a Dockerfile.
+- **`scripts/install.sh`**, which sets the console up as either a systemd
+  service or a Docker container, and offers to seal a locked config on the way.
+  Every answer has a flag, and `--non-interactive` fails rather than hanging
+  when nobody is there to answer.
+- **A remembered visit now shows the password prompt while it signs itself
+  in**, rather than a blank page. Opening the sealed config takes 120,000
+  rounds of PBKDF2 on the main thread, and the automatic path ran it with the
+  empty state already hidden and no dialog up, so a phone showed several
+  seconds of frozen nothing. The prompt now goes up first, says "Signing you
+  in", and is already there if the saved password has gone stale against a
+  repacked deployment. The typed path was always written this way; this brings
+  the automatic one into line with it.
 - **Stay signed in on this computer**, a checkbox on the password prompt of a
   locked deployment. Ticked, it saves the deployment password in that browser's
   localStorage, and later visits open themselves with nothing to type. A saved

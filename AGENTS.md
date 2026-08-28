@@ -61,6 +61,52 @@ deployment config per suite, so the working tree is never modified by a test run
 instead of the working tree, which is what continuous integration does to prove the
 artefact works.
 
+## Two implementations of one format
+
+`lockbox.js` and `seal.py` both implement the sealed deployment config, because
+the browser needs one and an installer on a headless machine needs the other.
+They must agree byte for byte, and a disagreement is silent: `seal.py` opens
+what it just wrote before handing it over, and that check passes just as
+happily when both halves are wrong together.
+
+So neither marks its own homework. `tests/seal.test.js` has each seal and the
+other open, in both directions, on every CI run and on both operating systems.
+If you touch the format in one, the test is what tells you about the other.
+
+Not every shared constant fails the same way, and the difference matters when
+you change one. `MAGIC` and `MAC_LEN` are compared directly by `lockbox.js`, so
+a disagreement there is refused outright. The salt length, the nonce length and
+the iteration count travel inside the blob and are read back from it, so the
+console opens those whatever they are.
+
+`MAX_ITERATIONS` is the one that bites. `lockbox.js` refuses a blob claiming
+more than two million rounds rather than hanging on it, so a config sealed above
+that ceiling is one the console can never open, and `seal.py` opening its own
+work would not notice. That is why `seal.py` mirrors the ceiling and rejects it
+before writing anything.
+
+## The container image
+
+The image runs `proxy.py`. It would be smaller to serve the static files alone,
+and it would be wrong: the reason to run this in a container is to reach it from
+another device, which puts the page and the display on different origins, which
+is the case a Bravia's missing CORS preflight breaks. Serving statically would
+work on the machine that built it and fail everywhere it was useful.
+
+**A sealed `deploy-config.js` must never enter the image.** The threat model in
+the README accepts that anyone holding the sealed blob can attack it offline,
+which is a fair trade for a file on your own network. A published image changes
+the population to anyone who can pull it, permanently, because registry layers
+outlive the file. Three things guard this and all three should stay:
+
+- `seal.py` refuses to write into a directory holding a `Dockerfile`.
+- CI checks the running container serves the placeholder.
+- The release workflow refuses to publish if `deploy-config.js` is not the
+  placeholder.
+
+`BRAVIA_TV` has no default. A proxy pointed at nothing starts happily and fails
+on every request, which is a slower way to learn the same thing.
+
 ## Releasing
 
 1. Bump `version` in `package.json` and `APP_VERSION` in `app.js` to the same number.

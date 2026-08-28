@@ -1,2 +1,6 @@
 # Build output, rebuilt from the working tree whenever it is needed.
 dist/
+
+# Python bytecode, from running proxy.py out of the checkout.
+__pycache__/
+*.py[cod]

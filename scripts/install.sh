@@ -1,0 +1,523 @@
+#!/usr/bin/env bash
+#
+# Install Bravia Console, either as a systemd service or as a Docker container,
+# and optionally seal a password-protected deployment config on the way.
+#
+# It asks which, then asks for the display's address, the pre-shared key set on
+# it, and the port to serve on. Every answer can be given as a flag instead,
+# and --non-interactive refuses to guess rather than hanging on a prompt that
+# nobody is there to answer.
+#
+# Safe to run more than once. An existing sealed config is left alone unless
+# you ask for a new one.
+#
+set -euo pipefail
+
+SERVICE_USER=bravia
+INSTALL_DIR=/opt/bravia-console
+CONFIG_DIR=/etc/bravia-console
+COMPOSE_FILE="$CONFIG_DIR/docker-compose.yml"
+UNIT_NAME=bravia-console.service
+UNIT_FILE="/etc/systemd/system/$UNIT_NAME"
+IMAGE=ghcr.io/mjaksn/bravia-http-remote:latest
+
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# What the app is, as far as a web server is concerned. proxy.py serves files
+# from its own directory, so this list is also exactly what it can serve.
+APP_FILES="index.html app.js style.css lockbox.js deploy-config.js pack.html proxy.py"
+
+usage() {
+    cat <<'USAGE'
+Usage: sudo scripts/install.sh [options]
+
+Installs Bravia Console as a systemd service, or writes a Docker Compose file
+and brings it up. With no options it asks which, and asks for the display.
+
+Options:
+  --systemd            install as a systemd service, do not ask
+  --docker             install as a Docker container, do not ask
+  --tv HOST            the display's address, host or host:port
+  --port PORT          port to serve the console on (default 8585)
+  --bind ADDR          address to serve on, systemd install only
+                       (default 0.0.0.0, so a phone can reach it)
+  --lock               seal a password-protected deployment config
+  --no-lock            do not seal one; each browser is asked for the details
+  --psk-file FILE      read the display's pre-shared key from this file
+  --interval SECONDS   starting refresh interval when sealing (default 5)
+  --password-file F    read the deployment password from this file
+  --non-interactive    never prompt; fail if something needed is missing
+  --no-start           install but do not start it
+  --help               show this message
+
+Neither the pre-shared key nor the deployment password is ever taken as an
+argument, or passed as one to seal.py, because an argument is visible in `ps` to
+every user on the machine. Both are asked for, or read from a file for
+unattended use. Delete those files afterwards.
+USAGE
+}
+
+say() { printf '  %s
+' "$*"; }
+die() { echo "install.sh: $*" >&2; exit 1; }
+
+# A two-argument flag with nothing after it would otherwise `shift 2` off the
+# end, which returns non-zero and, under `set -e`, ends the script without a
+# word. Checked before shifting so the caller is told which flag it was.
+need() {
+    [ $# -ge 2 ] || die "$1 needs a value"
+    printf '%s' "$2"
+}
+
+MODE=""
+TV=""
+PORT=""
+BIND=""
+LOCK=""
+PSK=""
+PSK_FILE=""
+INTERVAL=""
+PASSWORD_FILE=""
+INTERACTIVE=1
+START_IT=1
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --systemd) MODE=systemd; shift ;;
+        --docker) MODE=docker; shift ;;
+        --tv) TV="$(need "$@")"; shift 2 ;;
+        --tv=*) TV="${1#*=}"; shift ;;
+        --port) PORT="$(need "$@")"; shift 2 ;;
+        --port=*) PORT="${1#*=}"; shift ;;
+        --bind) BIND="$(need "$@")"; shift 2 ;;
+        --bind=*) BIND="${1#*=}"; shift ;;
+        --lock) LOCK=1; shift ;;
+        --no-lock) LOCK=0; shift ;;
+        --psk-file) PSK_FILE="$(need "$@")"; shift 2 ;;
+        --psk-file=*) PSK_FILE="${1#*=}"; shift ;;
+        --interval) INTERVAL="$(need "$@")"; shift 2 ;;
+        --interval=*) INTERVAL="${1#*=}"; shift ;;
+        --password-file) PASSWORD_FILE="$(need "$@")"; shift 2 ;;
+        --password-file=*) PASSWORD_FILE="${1#*=}"; shift ;;
+        --non-interactive) INTERACTIVE=0; shift ;;
+        --no-start) START_IT=0; shift ;;
+        --help|-h) usage; exit 0 ;;
+        *) echo "install.sh: unrecognised option '$1'" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "install.sh: this needs root. Try: sudo scripts/install.sh" >&2
+    exit 1
+fi
+
+
+# A prompt that takes a default, and that refuses to block when nobody is there
+# to answer. --non-interactive is the explicit form; a run from cron with no
+# terminal is the accidental one, and both should take the default rather than
+# wait for input that is never coming.
+ask() {
+    local prompt="$1" default="$2" answer=""
+    if [ "$INTERACTIVE" -eq 0 ] || [ ! -t 0 ]; then
+        printf '%s' "$default"
+        return
+    fi
+    read -r -p "  $prompt [$default]: " answer </dev/tty || answer=""
+    printf '%s' "${answer:-$default}"
+}
+
+ask_required() {
+    local prompt="$1" answer=""
+    if [ "$INTERACTIVE" -eq 0 ] || [ ! -t 0 ]; then
+        printf ''
+        return
+    fi
+    read -r -p "  $prompt: " answer </dev/tty || answer=""
+    printf '%s' "$answer"
+}
+
+# Read without echoing. The pre-shared key controls the display and the
+# deployment password unlocks it, so neither should be left on screen or in a
+# shell history, and neither is ever passed as an argument.
+ask_secret() {
+    local prompt="$1" answer=""
+    if [ "$INTERACTIVE" -eq 0 ] || [ ! -t 0 ]; then
+        printf ''
+        return
+    fi
+    read -r -s -p "  $prompt: " answer </dev/tty || answer=""
+    printf '\n' >&2
+    printf '%s' "$answer"
+}
+
+ask_yes_no() {
+    local prompt="$1" default="$2" answer=""
+    answer="$(ask "$prompt (y/n)" "$default")"
+    case "$answer" in
+        [Yy]*) printf '1' ;;
+        [Nn]*) printf '0' ;;
+        *) if [ "$default" = "y" ]; then printf '1'; else printf '0'; fi ;;
+    esac
+}
+
+check_port() {
+    local value="$1" what="$2"
+    case "$value" in
+        ''|*[!0-9]*) die "$what must be a number, not '$value'" ;;
+    esac
+    if [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; then
+        die "$what must be between 1 and 65535, not $value"
+    fi
+    if [ "$value" -lt 1024 ]; then
+        say "warning: $what $value is privileged, and this runs unprivileged"
+    fi
+}
+
+PYTHON=""
+find_python() {
+    for candidate in python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            # The path, not the name. ExecStart on systemd before v239 must be
+            # absolute, and a unit that cannot start is a poor way to find out.
+            PYTHON="$(command -v "$candidate")"
+            return 0
+        fi
+    done
+    return 1
+}
+
+echo
+echo "Installing Bravia Console from $SOURCE_DIR"
+echo
+
+# == what kind of install ====================================================
+
+if [ -z "$MODE" ]; then
+    if [ "$INTERACTIVE" -eq 0 ]; then
+        die "--systemd or --docker is required with --non-interactive"
+    fi
+    echo "  How should the console run?"
+    echo
+    echo "    1) systemd, serving the app from this machine"
+    echo "    2) Docker, from the published image"
+    echo
+    case "$(ask "1 or 2" "1")" in
+        2) MODE=docker ;;
+        *) MODE=systemd ;;
+    esac
+    echo
+fi
+
+# == the answers =============================================================
+
+if [ -z "$TV" ]; then
+    TV="$(ask_required "The display's address, for example 192.168.1.50")"
+fi
+[ -n "$TV" ] || die "the display's address is required (--tv)"
+
+if [ -z "$PORT" ]; then
+    PORT="$(ask "Port to serve the console on" "8585")"
+fi
+check_port "$PORT" "the console port"
+
+# 0.0.0.0 rather than proxy.py's own 127.0.0.1 default, because a remote
+# control that only answers on the machine running it is not much of a remote
+# control. The Docker install always binds every interface inside the
+# container and lets the publish decide, which is why this is asked for only
+# on the systemd path.
+if [ "$MODE" = "systemd" ] && [ -z "$BIND" ]; then
+    BIND="$(ask "Address to serve on, 0.0.0.0 for the whole network" "0.0.0.0")"
+fi
+BIND="${BIND:-0.0.0.0}"
+
+# == the sealed config =======================================================
+
+if [ -z "$LOCK" ] && [ "$INTERACTIVE" -eq 0 ]; then
+    die "--lock or --no-lock is required with --non-interactive"
+fi
+
+if [ -z "$LOCK" ]; then
+    echo
+    echo "  Without a locked config, every browser that loads the page is asked for"
+    echo "  the display's address and key, and anyone who can reach the page can"
+    echo "  drive the display. A locked config ships them encrypted, behind a"
+    echo "  password you choose."
+    echo
+    LOCK="$(ask_yes_no "Seal a password-protected config" "$([ "$BIND" = "127.0.0.1" ] && echo n || echo y)")"
+fi
+
+SEALED=0
+if [ "$LOCK" -eq 1 ]; then
+    find_python || die "python3 is needed to seal a config, and was not found"
+
+    if [ -n "$PSK_FILE" ]; then
+        [ -f "$PSK_FILE" ] || die "$PSK_FILE does not exist"
+        PSK="$(cat "$PSK_FILE")"
+    else
+        PSK="$(ask_secret "The display's pre-shared key")"
+    fi
+    [ -n "$PSK" ] || die "the pre-shared key is required in order to seal a config (--psk-file)"
+
+    if [ -z "$INTERVAL" ]; then
+        INTERVAL="$(ask "Starting refresh interval in seconds" "5")"
+    fi
+    case "$INTERVAL" in
+        ''|*[!0-9]*) die "the refresh interval must be a number, not '$INTERVAL'" ;;
+    esac
+
+    mkdir -p "$CONFIG_DIR"
+    chmod 0755 "$CONFIG_DIR"
+    SEALED_FILE="$CONFIG_DIR/deploy-config.js"
+
+    if [ -f "$SEALED_FILE" ]; then
+        say "keeping the existing sealed config at $SEALED_FILE"
+        say "delete it and run this again to change the password or the key"
+        SEALED=1
+    else
+        # seal.py asks for the password itself, twice, without echoing it, and
+        # verifies the file opens again before handing it over. Its --out is
+        # given a path outside the checkout so that a sealed config can never
+        # end up in a build context, which is the one place it must not be.
+        #
+        # The key goes over in a file, never as an argument. An argument is
+        # visible in `ps` to every user on this machine for as long as the seal
+        # takes, which is 120,000 rounds of PBKDF2 with the key sitting there.
+        # Reading it back with no echo and then putting it in argv would undo
+        # the whole point of asking for it that way.
+        psk_tmp="$(mktemp)"
+        chmod 0600 "$psk_tmp"
+        # Cleared on every exit, including the die paths below and a Ctrl-C
+        # part way through the derivation.
+        trap 'rm -f "$psk_tmp"' EXIT INT TERM
+        printf '%s' "$PSK" > "$psk_tmp"
+
+        if [ -n "$PASSWORD_FILE" ]; then
+            "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
+                --interval "$INTERVAL" --out "$SEALED_FILE" \
+                --password-file "$PASSWORD_FILE" >/dev/null
+        elif [ "$INTERACTIVE" -eq 0 ] || [ ! -t 0 ]; then
+            die "sealing needs a password: use --password-file, or drop --lock"
+        else
+            echo
+            "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
+                --interval "$INTERVAL" --out "$SEALED_FILE" >/dev/null
+        fi
+
+        rm -f "$psk_tmp"
+        trap - EXIT INT TERM
+        chmod 0644 "$SEALED_FILE"
+        say "sealed the connection details into $SEALED_FILE"
+        SEALED=1
+    fi
+fi
+
+# The key has done its work. Drop it rather than leaving it in the environment
+# of everything this script runs from here on.
+PSK=""
+unset PSK
+
+echo
+
+if [ "$MODE" = "systemd" ]; then
+
+    # == systemd =============================================================
+
+    command -v systemctl >/dev/null 2>&1 \
+        || die "systemctl not found. Choose the Docker install, or use a systemd machine."
+    find_python || die "python3 not found. Install it and run this again."
+
+    if id "$SERVICE_USER" >/dev/null 2>&1; then
+        say "user $SERVICE_USER already exists"
+    else
+        # --user-group explicitly: the unit says Group=bravia, and whether a
+        # bare useradd creates a matching group depends on USERGROUPS_ENAB and
+        # so on the distribution.
+        useradd --system --user-group --no-create-home \
+            --shell /usr/sbin/nologin "$SERVICE_USER"
+        say "created system user and group $SERVICE_USER"
+    fi
+
+    mkdir -p "$INSTALL_DIR"
+    for file in $APP_FILES; do
+        install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_DIR/$file"
+    done
+    mkdir -p "$INSTALL_DIR/content"
+    if [ -d "$SOURCE_DIR/content" ]; then
+        find "$SOURCE_DIR/content" -maxdepth 1 -type f -exec \
+            install -m 0644 {} "$INSTALL_DIR/content/" \;
+    fi
+    say "installed the app into $INSTALL_DIR"
+
+    # The sealed config replaces the placeholder that was just copied in.
+    if [ "$SEALED" -eq 1 ]; then
+        install -m 0644 "$CONFIG_DIR/deploy-config.js" "$INSTALL_DIR/deploy-config.js"
+        say "installed the sealed config"
+    fi
+
+    chown -R root:root "$INSTALL_DIR"
+
+    cat > "$UNIT_FILE" <<UNIT
+[Unit]
+Description=Bravia Console, a web remote for Sony Bravia displays
+Documentation=https://github.com/mjaksn/bravia-http-remote
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$SERVICE_USER
+Group=$SERVICE_USER
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$PYTHON $INSTALL_DIR/proxy.py $TV $PORT $BIND
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bravia-console
+
+# Hardening. It reads its own directory, binds one port and talks to one
+# television. It writes nothing at all.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+    chmod 0644 "$UNIT_FILE"
+    systemctl daemon-reload
+    systemctl enable "$UNIT_NAME" >/dev/null 2>&1
+    say "installed and enabled $UNIT_NAME"
+
+    if [ "$START_IT" -eq 1 ]; then
+        systemctl restart "$UNIT_NAME"
+        say "started $UNIT_NAME"
+    fi
+
+else
+
+    # == docker ==============================================================
+
+    command -v docker >/dev/null 2>&1 \
+        || die "docker not found. Choose the systemd install, or install Docker."
+    docker compose version >/dev/null 2>&1 \
+        || die "'docker compose' is not available. Install the Compose plugin."
+
+    mkdir -p "$CONFIG_DIR"
+    chmod 0755 "$CONFIG_DIR"
+
+    mount_lines=""
+    if [ "$SEALED" -eq 1 ]; then
+        # Mounted, never copied into an image. A sealed blob inside a published
+        # image can be pulled and attacked offline by anyone, and registry
+        # layers outlive any attempt to take it back.
+        mount_lines="
+    volumes:
+      - $CONFIG_DIR/deploy-config.js:/app/deploy-config.js:ro"
+    fi
+
+    cat > "$COMPOSE_FILE" <<COMPOSE
+# Written by scripts/install.sh. Running the installer again rewrites this
+# file, so keep any edits of your own somewhere else.
+
+name: bravia-console
+
+services:
+  console:
+    image: $IMAGE
+    container_name: bravia-console
+    restart: unless-stopped
+
+    environment:
+      BRAVIA_TV: $TV
+      BRAVIA_PORT: 8585
+
+    ports:
+      - "$PORT:8585"$mount_lines
+COMPOSE
+
+    chmod 0644 "$COMPOSE_FILE"
+    say "wrote $COMPOSE_FILE"
+
+    if docker pull --quiet "$IMAGE" >/dev/null 2>&1; then
+        say "pulled $IMAGE"
+    else
+        say "warning: could not pull $IMAGE; compose will try again on start"
+    fi
+
+    if [ "$START_IT" -eq 1 ]; then
+        docker compose --file "$COMPOSE_FILE" up --detach >/dev/null
+        say "started the bravia-console container"
+    fi
+fi
+
+# == what to do next =========================================================
+
+# `hostname -I` is Linux and prints nothing on some systems. awk exits 0 on
+# empty input, so a `|| echo localhost` after it would never run: the fallback
+# has to test the value rather than the pipeline's status.
+HOSTADDR="$(hostname -I 2>/dev/null | awk '{print $1}')"
+[ -n "$HOSTADDR" ] || HOSTADDR="localhost"
+
+echo
+echo "Done."
+echo
+
+cat <<NEXT
+  The console is at:
+
+      http://$HOSTADDR:$PORT/
+
+  It serves the app and forwards /sony/* to $TV, so the browser and the
+  display are same-origin and no CORS preflight is involved.
+
+NEXT
+
+if [ "$SEALED" -eq 1 ]; then
+    cat <<LOCKED
+  It will open at a password prompt. The address and the key are sealed inside
+  $CONFIG_DIR/deploy-config.js and a forgotten password cannot be recovered:
+  delete that file and run this again to set a new one.
+
+LOCKED
+else
+    cat <<OPEN
+  It is NOT locked. Every browser that loads it is asked for the display's
+  address and key, and anyone who can reach the page can drive the display.
+  Run this again with --lock if that is not what you want.
+
+OPEN
+fi
+
+if [ "$MODE" = "systemd" ]; then
+    cat <<SYSNEXT
+  Check it came up:
+
+      systemctl status $UNIT_NAME
+      journalctl -u $UNIT_NAME -n 50 --no-pager
+
+SYSNEXT
+else
+    cat <<DOCKNEXT
+  Check it came up:
+
+      docker compose --file $COMPOSE_FILE ps
+      docker compose --file $COMPOSE_FILE logs --tail 50
+
+DOCKNEXT
+fi

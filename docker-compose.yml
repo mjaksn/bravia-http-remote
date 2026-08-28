@@ -1,0 +1,52 @@
+# Bravia Console in a container, serving the app and forwarding to the display.
+#
+#   BRAVIA_TV=192.168.1.50 docker compose up --detach
+#
+# Set BRAVIA_TV in the environment or in a .env file beside this one. There is
+# no default: a proxy pointed at nothing would start happily and fail on every
+# request, which is a slower way to learn the same thing.
+
+name: bravia-console
+
+services:
+  console:
+    image: ghcr.io/mjaksn/bravia-http-remote:latest
+    container_name: bravia-console
+    restart: unless-stopped
+
+    environment:
+      # The display's address, host or host:port. Port 80 unless you say
+      # otherwise, which is where a Bravia's REST API lives.
+      BRAVIA_TV: ${BRAVIA_TV:?set BRAVIA_TV to the display address}
+      # The port inside the container. Change the published port below instead
+      # unless something needs this one moved.
+      BRAVIA_PORT: 8585
+
+    ports:
+      # Published on every interface, because reaching this from a phone is the
+      # ordinary reason to run it in a container at all.
+      #
+      # That is also exactly when the sealed config below earns its keep:
+      # without one, anyone on the network who loads the page inherits control
+      # of the display. Publish to "127.0.0.1:8585:8585" instead if you only
+      # ever want it from this machine.
+      - "8585:8585"
+
+    # Nothing is mounted by default. The app keeps no server-side state at all:
+    # what a browser remembers, it remembers in its own localStorage.
+    #
+    # The one thing worth mounting is a password-protected deployment config,
+    # if you have sealed one. Mounted rather than built in, deliberately: the
+    # sealed blob can be attacked offline by anyone holding it, which is a fair
+    # trade for a file on your own network and a bad one for a file inside a
+    # published image, where registry layers outlive any attempt to take it
+    # back.
+    #
+    # Make one with, and note the --out: seal.py refuses to write beside a
+    # Dockerfile, which is the guard that keeps a sealed config from being
+    # built into a published image.
+    #
+    #   python seal.py --host 192.168.1.50 --psk 0000 --out ~/deploy-config.js
+    #
+    #volumes:
+    #  - ./deploy-config.js:/app/deploy-config.js:ro

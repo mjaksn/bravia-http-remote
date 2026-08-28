@@ -1,0 +1,32 @@
+# What the build context does not need.
+#
+# The Dockerfile copies the app by name, so this is belt and braces: it keeps
+# the context small and keeps anything sensitive out of reach of a COPY that
+# grows a wildcard later.
+
+.git/
+.github/
+node_modules/
+dist/
+
+# The test suite runs against the source tree, not the image.
+tests/
+scripts/
+
+# Prose and tooling the image has no use for.
+AGENTS.md
+CLAUDE.md
+CHANGELOG.md
+README.md
+package.json
+package-lock.json
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# The sealer runs on the host, before or after a build, and never inside the
+# image. Its output is mounted at run time.
+seal.py
+
+__pycache__/
+*.py[cod]
