@@ -41,6 +41,13 @@ jobs:
       - name: Unit tests
         run: node tests/lockbox.test.js
 
+      # seal.py and lockbox.js implement one format twice. Each seals and the
+      # other opens, in both directions, because seal.py checking its own work
+      # would pass just as happily with both halves wrong together. Both runner
+      # images ship a Python, so nothing is installed to run this.
+      - name: The sealer and the browser must agree
+        run: node tests/seal.test.js
+
       # The browser suites drive the real pages. Both runner images ship a
       # Chromium already, so nothing is downloaded to run them.
       - name: Browser suites
@@ -74,12 +81,71 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
+  docker:
+    name: the image builds and serves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Build it
+        # amd64 only, and no push. The point is that the Dockerfile still
+        # builds and the image still serves the app, which a thing exercised
+        # only at tag time stops doing quietly.
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: bravia:ci
+      - name: Start it and fetch what it serves
+        # No display is involved. /__proxy reports which one it is pointed at
+        # without talking to it, and the app itself is static files.
+        run: |
+          docker run --detach --name probe             --env BRAVIA_TV=192.0.2.10             --publish 127.0.0.1:8585:8585 bravia:ci
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8585/__proxy > proxy.json; then
+              break
+            fi
+            sleep 1
+          done
+          docker logs probe
+          cat proxy.json
+          grep -q '"tv": "192.0.2.10:80"' proxy.json || {
+            echo "::error::the proxy is not pointed where it was told"
+            exit 1
+          }
+          curl --silent --fail http://127.0.0.1:8585/ > index.out
+          grep -qi '<html' index.out || {
+            echo "::error::the container did not serve the app"
+            exit 1
+          }
+      - name: The image must not carry a sealed config
+        # A sealed blob inside a published image can be pulled and attacked
+        # offline by anyone, and registry layers outlive any attempt to take it
+        # back. The image ships the placeholder; a real one is mounted.
+        run: |
+          served="$(curl --silent http://127.0.0.1:8585/deploy-config.js)"
+          echo "$served" | grep -q 'BRAVIA_DEPLOY_CONFIG = null' || {
+            echo "::error::the image is serving something other than the placeholder"
+            exit 1
+          }
+          echo "the image ships the placeholder, as it must"
+      - name: It must be running as the unprivileged user
+        run: |
+          who="$(docker exec probe id --user --name)"
+          echo "running as $who"
+          [ "$who" = "bravia" ] || {
+            echo "::error::the container is running as $who, not bravia"
+            exit 1
+          }
+
   # The single check branch protection requires. Naming the matrix jobs
   # directly would mean listing every combination, and renaming one would
   # quietly stop protecting anything.
   gate:
     if: always() # so an upstream failure cannot leave this skipped, and satisfied by default
-    needs: [lint, test, build]
+    needs: [lint, test, build, docker]
     runs-on: ubuntu-latest
     steps:
       - name: Check the results
@@ -87,6 +153,8 @@ jobs:
           echo "lint:  ${{ needs.lint.result }}"
           echo "test:  ${{ needs.test.result }}"
           echo "build: ${{ needs.build.result }}"
+          echo "docker: ${{ needs.docker.result }}"
           [ "${{ needs.lint.result }}"  = "success" ] || exit 1
           [ "${{ needs.test.result }}"  = "success" ] || exit 1
           [ "${{ needs.build.result }}" = "success" ] || exit 1
+          [ "${{ needs.docker.result }}" = "success" ] || exit 1

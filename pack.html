@@ -59,7 +59,10 @@
   <p class="lede">Seals a display address and pre-shared key into
     <span class="mono">deploy-config.js</span>. Drop that file next to
     <span class="mono">index.html</span> and the console starts locked: it asks for the
-    password below instead of asking each person for the address and the key.</p>
+    password below instead of asking each person for the address and the key. The prompt
+    also offers to stay signed in, which saves the password in that one browser and opens
+    the console there without asking again; it is off unless the person at that browser
+    ticks it.</p>
 
   <p class="lede">Everything happens in this page. Nothing is uploaded, and nothing is
     written anywhere until you save the file yourself.</p>
@@ -119,7 +122,8 @@ const $ = (id) => document.getElementById(id);
 const HEADER =
   '/* Bravia Console deployment config, written by pack.html.\n' +
   '   The address and pre-shared key inside are encrypted with a password;\n' +
-  '   the console asks for it at launch. Repack to change any of them. */\n\n';
+  '   the console asks for it at launch, unless that browser has been told\n' +
+  '   to stay signed in. Repack to change any of them. */\n\n';
 
 function fail(msg) {
   const err = $('pack-error');

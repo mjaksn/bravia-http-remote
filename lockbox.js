@@ -282,6 +282,11 @@ function open(password, blob) {
 global.Lockbox = {
   seal, open, LockboxError,
   DEFAULT_ITERATIONS,
+  // Exported so the other implementation of this format can be held to the
+  // same ceiling rather than to a number copied into it. A blob above this
+  // is refused here, so a sealer that does not know the limit can write a
+  // file the console will never open.
+  MAX_ITERATIONS,
   // Exposed so the primitives can be checked against published test
   // vectors. A seal-and-open round trip, which is all pack.html does
   // before handing over a file, would pass even on a wrong SHA-256.

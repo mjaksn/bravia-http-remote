@@ -10,7 +10,7 @@
  * this project does not use.
  */
 
-const { spawnSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -19,7 +19,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const JS = ['app.js', 'lockbox.js', 'deploy-config.js', 'proxy.js',
             'scripts/build.js', 'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js',
-            'tests/lockbox.test.js'];
+            'tests/lockbox.test.js', 'tests/seal.test.js'];
 
 const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
                'index.html', 'pack.html', 'style.css', 'app.js', 'lockbox.js',
@@ -27,7 +27,15 @@ const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
                'scripts/build.js', '.github/workflows/ci.yml', '.github/workflows/release.yml',
                'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js', 'tests/lockbox.test.js',
                'tests/browser/harness.js', 'tests/browser/sealed.html',
-               'tests/browser/unsealed.html', 'tests/browser/authfail.html'];
+               'tests/browser/unsealed.html', 'tests/browser/authfail.html',
+               'seal.py', 'scripts/install.sh', 'Dockerfile', '.dockerignore',
+               'docker-compose.yml'];
+
+// Files that are not JavaScript and so cannot be parse-checked above, but
+// which a broken edit breaks just as thoroughly. Checked with whatever
+// already has to be installed to run them.
+const SHELL = ['scripts/install.sh'];
+const PYTHON = ['seal.py', 'proxy.py'];
 
 const problems = [];
 const note = (msg) => problems.push(msg);
@@ -85,6 +93,54 @@ for (const file of PROSE) {
   });
 }
 
+/* ── the files that are not JavaScript ──────────────────────────────── */
+
+/* seal.py and install.sh are as load-bearing as anything here: one writes the
+   sealed config and the other installs the lot. Neither can be parse-checked
+   by the block above, so each is handed to the thing that runs it. Both
+   runtimes are already required by this project, and a missing one is a broken
+   environment rather than a reason to quietly check less. */
+function syntaxCheck(files, describe) {
+  for (const file of files) {
+    const full = path.join(ROOT, file);
+    if (!fs.existsSync(full)) { note('missing file: ' + file); continue; }
+    const { cmd, args } = describe(full);
+    if (!cmd) { note(`${file}: no interpreter found to check it with`); continue; }
+    const result = spawnSync(cmd, args, { encoding: 'utf8' });
+    if (result.error) {
+      note(`${file}: could not run ${cmd} to check it: ${result.error.message}`);
+    } else if (result.status !== 0) {
+      const output = (result.stderr || result.stdout || '').trim();
+      note(`${file}: ${output.split(String.fromCharCode(10))[0]}`);
+    }
+  }
+}
+
+/* The interpreter's own path, found once through a shell and then used
+   directly. On Windows the name on PATH is often a .bat shim, which
+   CreateProcess will not launch, so spawning it by name fails on a machine
+   that has Python installed perfectly well. */
+function interpreter(names) {
+  for (const name of names) {
+    try {
+      const found = execSync(name + ' -c "import sys; print(sys.executable)"',
+                             { encoding: 'utf8', stdio: 'pipe' }).trim();
+      if (found && fs.existsSync(found)) return found;
+    } catch { /* try the next one */ }
+  }
+  return null;
+}
+
+const PY = interpreter(['python3', 'python']);
+
+syntaxCheck(SHELL, (full) => ({ cmd: 'bash', args: ['-n', full] }));
+// compile() rather than -m py_compile, which would leave a __pycache__
+// behind on every lint run.
+syntaxCheck(PYTHON, (full) => ({
+  cmd: PY,
+  args: ['-c', 'import sys; compile(open(sys.argv[1]).read(), sys.argv[1], "exec")', full],
+}));
+
 /* ── report ────────────────────────────────────────────────────────── */
 
 if (problems.length) {
@@ -94,4 +150,5 @@ if (problems.length) {
 }
 console.log(`lint ok: ${JS.length} scripts parse, version ${pkgVersion} agrees in ` +
             'package.json, app.js and CHANGELOG.md, deploy-config.js is the placeholder, ' +
-            `punctuation clean across ${PROSE.length} files`);
+            `punctuation clean across ${PROSE.length} files, ` +
+            `${SHELL.length + PYTHON.length} shell and python files parse`);

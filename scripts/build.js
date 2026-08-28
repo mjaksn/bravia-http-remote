@@ -32,6 +32,8 @@ const FILES = [
   'pack.html',
   'proxy.js',
   'proxy.py',
+  'seal.py',
+  'scripts/install.sh',
   'README.md',
   'CHANGELOG.md',
   'LICENSE',
@@ -66,7 +68,7 @@ function zip(entries) {
   const central = [];
   let offset = 0;
 
-  for (const { name, data } of entries) {
+  for (const { name, data, mode } of entries) {
     const nameBuf = Buffer.from(name, 'utf8');
     const deflated = zlib.deflateRawSync(data, { level: 9 });
     // A tiny file can deflate larger than it started; store it instead.
@@ -91,7 +93,10 @@ function zip(entries) {
 
     const dir = Buffer.alloc(46);
     dir.writeUInt32LE(0x02014b50, 0);
-    dir.writeUInt16LE(20, 4);              // version made by
+    // Host 3 (Unix) in the high byte, and the format version in the low one.
+    // Left as MS-DOS, unzip discards the permission bits below entirely and
+    // every file arrives 0644 whatever this says.
+    dir.writeUInt16LE((3 << 8) | 20, 4);   // version made by: unix
     dir.writeUInt16LE(20, 6);              // version needed
     dir.writeUInt16LE(0, 8);               // flags
     dir.writeUInt16LE(method, 10);
@@ -105,10 +110,10 @@ function zip(entries) {
     dir.writeUInt16LE(0, 32);              // comment
     dir.writeUInt16LE(0, 34);              // disk number
     dir.writeUInt16LE(0, 36);              // internal attributes
-    // External attributes: a regular file, 0644. Shifted back into an
-    // unsigned range, since a bitwise shift in JavaScript is signed and
-    // this value does not fit in 31 bits.
-    dir.writeUInt32LE((0o100644 << 16) >>> 0, 38);
+    // External attributes: a regular file, with the mode the working tree
+    // had. Shifted back into an unsigned range, since a bitwise shift in
+    // JavaScript is signed and this value does not fit in 31 bits.
+    dir.writeUInt32LE(((0o100000 | (mode || 0o644)) << 16) >>> 0, 38);
     dir.writeUInt32LE(offset, 42);
     central.push(dir, nameBuf);
 
@@ -137,7 +142,17 @@ function collect(rel, into) {
   if (stat.isDirectory()) {
     for (const child of fs.readdirSync(full).sort()) collect(path.posix.join(rel, child), into);
   } else {
-    into.push({ name: rel, data: fs.readFileSync(full) });
+    // A file that starts with a shebang is meant to be run, and ships 0755.
+    // install.sh is why: the README's instruction is `sudo scripts/install.sh`
+    // and a 0644 copy answers that with "Permission denied".
+    //
+    // Decided by the shebang rather than by the mode on disk, because the
+    // mode on disk is not portable. Windows does not carry an executable bit
+    // at all, and this repository has core.fileMode false, so an archive
+    // built on a laptop would differ from one built in CI.
+    const data = fs.readFileSync(full);
+    const mode = data.subarray(0, 2).toString('latin1') === '#!' ? 0o755 : 0o644;
+    into.push({ name: rel, data, mode });
   }
   return into;
 }
@@ -169,7 +184,7 @@ function main() {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
 
-  const archive = zip(entries.map(e => ({ name: name + '/' + e.name, data: e.data })));
+  const archive = zip(entries.map(e => ({ name: name + '/' + e.name, data: e.data, mode: e.mode })));
   const out = path.join(outDir, name + '.zip');
   fs.writeFileSync(out, archive);
 

@@ -7,15 +7,17 @@
 <script src="/harness/harness.js"></script>
 <script>
 /* A build deployed with a sealed config: what it does before anyone has
-   typed the password, what it does with a wrong one, and what it holds
-   once it is open. Served with a config sealed under "letmein" around
+   typed the password, what it does with a wrong one, what it holds once
+   it is open, and what staying signed in on a machine saves, opens with
+   and gives back. Served with a config sealed under "letmein" around
    host 127.0.0.1:1 (a port nothing answers, so the connection attempt
    fails fast) and key "super-secret-psk". */
 
 run(async () => {
   const a = app(document.getElementById('app'));
 
-  // A browser that used this origin as an ordinary console beforehand.
+  // A browser that used this origin as an ordinary console beforehand,
+  // and that was never told to stay signed in.
   localStorage.clear();
   localStorage.setItem('bravia-console-config',
     JSON.stringify({ host: '10.9.9.9', psk: 'stale-old-key', interval: 3 }));
@@ -105,6 +107,8 @@ run(async () => {
   await waitFor(() => a.$('settings-dialog').open, 'settings');
   ok('address and key fields hidden', a.$('settings-connection').hidden);
   ok('deployment note shown', !a.$('deploy-note').hidden);
+  ok('the note says the session ends with the tab', !a.$('deploy-session-note').hidden);
+  ok('no stay-signed-in note when nothing is saved', a.$('deploy-remembered-note').hidden);
   ok('logout button shown', !a.$('btn-logout').hidden);
   ok('save button says what it does', a.$('btn-cfg-save').textContent === 'Save',
      a.$('btn-cfg-save').textContent);
@@ -137,7 +141,136 @@ run(async () => {
   await waitFor(() => a.read('cfg') !== null, 'the second unlock');
   ok('a locally chosen interval outranks the packaged one', a.read('cfg').interval === 12);
   ok('key recovered again', a.read('getPsk()') === 'super-secret-psk');
+  ok('an unlock with the box unchecked saves no password', saved() === null,
+     a.read('JSON.stringify({...localStorage})'));
+
+  /* ── stay signed in ───────────────────────────────────────── */
+  await relock(a);
+  ok('the box starts unchecked', a.$('unlock-remember').checked === false);
+  await unlockAgain(a, 'letmein', true);
+  const first = saved();
+  ok('a checked box saves the password', first !== null);
+  ok('what is saved is not the password in the clear',
+     String(first).indexOf('letmein') === -1, first);
+  ok('what is saved is the password behind five random characters',
+     decodeSaved(first) === 'letmein', first);
+  ok('neither address nor key is saved with it',
+     String(first).indexOf('super-secret-psk') === -1 &&
+     String(first).indexOf('127.0.0.1') === -1, first);
+
+  /* Two visits must not settle on the same stored value, or the prefix is
+     not random. */
+  await relock(a);
+  await unlockAgain(a, 'letmein', true);
+  ok('the random prefix differs between visits', saved() !== first,
+     first + ' then ' + saved());
+
+  /* ── a remembered visit opens itself ────────────────────────────── */
+  reloadApp(a);
+  await waitFor(() => a.loaded() && a.read('cfg') !== null, 'the automatic unlock');
+  ok('no password prompt on a remembered visit', !a.$('unlock-dialog').open);
+  ok('the console is unlocked', a.read('locked') === false);
+  ok('the key came back with nobody typing', a.read('getPsk()') === 'super-secret-psk');
+  ok('the main screen is up', a.$('empty-state').hidden);
+  ok('the saved password survives the visit it opened', saved() !== null);
+  a.$('btn-settings').click();
+  await waitFor(() => a.$('settings-dialog').open, 'settings on a remembered visit');
+  ok('settings says the password is saved here', !a.$('deploy-remembered-note').hidden);
+  ok('and drops the note about closing the tab', a.$('deploy-session-note').hidden);
+  a.$('btn-cfg-cancel').click();
+  await sleep(50);
+
+  /* ── a saved password that is not the password ───────────────────── */
+  setSaved(encodeSaved('not-the-password'));
+  reloadApp(a);
+  await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open,
+                'the prompt after a wrong saved password');
+  ok('a wrong saved password falls back to the prompt', a.$('unlock-dialog').open);
+  ok('the prompt reads as an ordinary first visit', a.$('unlock-error').hidden);
+  ok('the box is unchecked again', a.$('unlock-remember').checked === false);
+  ok('nothing was unlocked', a.read('cfg') === null && a.read('getPsk()') === '');
+  ok('a wrong saved password is dropped', saved() === null,
+     a.read('JSON.stringify({...localStorage})'));
+
+  /* ── a saved value an attacker chose ────────────────────────────── */
+  /* Every one of these is what a hand-edited store looks like: not base64,
+     too short to hold the prefix and a password, valid base64 over bytes
+     that are not UTF-8, and a prefix with nothing after it. Each has to
+     land on the prompt rather than an exception. */
+  const junk = ['not base64 at all!!', '=====', 'YQ==', 'AAAA', 'gIA=', 'gICAgIA=',
+                encodeSaved(''), '\u0000\u0000', 'a'.repeat(4096)];
+  for (const value of junk) {
+    setSaved(value);
+    reloadApp(a);
+    await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open,
+                  'the prompt after ' + JSON.stringify(value.slice(0, 20)));
+    ok('a junk saved password leaves the lock in place: ' + JSON.stringify(value.slice(0, 20)),
+       a.$('unlock-dialog').open && a.read('cfg') === null);
+  }
+
+  /* ── logging out forgets the password ──────────────────────────── */
+  await relock(a);
+  await unlockAgain(a, 'letmein', true);
+  ok('remembered before logging out', saved() !== null);
+  a.$('btn-settings').click();
+  await waitFor(() => a.$('settings-dialog').open, 'settings before logging out');
+  a.$('btn-logout').click();
+  await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open && a.read('cfg') === null,
+                'the lock after logging out');
+  ok('logout deletes the saved password', saved() === null,
+     a.read('JSON.stringify({...localStorage})'));
+  await sleep(400);
+  ok('a logged-out page does not sign itself back in',
+     a.$('unlock-dialog').open && a.read('cfg') === null);
 });
+
+/* ── the saved password, from outside the app ────────────────────── */
+
+/* The suite page and the app share an origin, so what the app saves is
+   readable here. These helpers speak the same format the app does, so a
+   test can plant a value as well as read one back. */
+
+const SAVED_KEY = 'bravia-console-remember';
+
+/* Putting the same src back on an iframe navigates nowhere, and a test
+   that believes it reloaded is a test that proves nothing, so every
+   visit gets its own URL. The server ignores the query. */
+let visits = 0;
+const reloadApp = (a) => a.load('/index.html?visit=' + (++visits));
+
+const saved = () => localStorage.getItem(SAVED_KEY);
+const setSaved = (value) => localStorage.setItem(SAVED_KEY, value);
+const forgetSaved = () => localStorage.removeItem(SAVED_KEY);
+
+function encodeSaved(password) {
+  const bytes = new TextEncoder().encode('abcde' + password);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function decodeSaved(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes.subarray(5));
+}
+
+/* Back to a freshly loaded, locked page with nothing saved. */
+async function relock(a) {
+  forgetSaved();
+  reloadApp(a);
+  await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open, 'a fresh lock');
+}
+
+/* Unlock from whatever page is up, with the box in a chosen state. */
+async function unlockAgain(a, password, remember) {
+  await waitFor(() => a.$('unlock-dialog') && a.$('unlock-dialog').open, 'the prompt');
+  a.$('unlock-remember').checked = !!remember;
+  a.$('unlock-password').value = password;
+  a.fire('unlock-form', 'submit');
+  await waitFor(() => a.read('cfg') !== null, 'the unlock');
+}
 </script>
 </body>
 </html>
