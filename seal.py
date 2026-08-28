@@ -135,10 +135,17 @@ def open_sealed(password: str, blob: dict) -> dict:
     # claiming a billion rounds should be refused rather than spun on.
     if iterations < 1 or iterations > MAX_ITERATIONS:
         raise ValueError("unusable iteration count")
-    salt = base64.b64decode(blob["salt"])
-    nonce = base64.b64decode(blob["nonce"])
-    ct = base64.b64decode(blob["ct"])
-    mac = base64.b64decode(blob["mac"])
+    # A missing field is a KeyError and a non-string one a TypeError, and
+    # neither is what this function promises. Bad base64 and bad UTF-8 already
+    # arrive as ValueError, since binascii.Error and UnicodeDecodeError both
+    # subclass it, but the lookups do not.
+    try:
+        salt = base64.b64decode(blob["salt"])
+        nonce = base64.b64decode(blob["nonce"])
+        ct = base64.b64decode(blob["ct"])
+        mac = base64.b64decode(blob["mac"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("corrupt configuration") from None
     if len(mac) != MAC_LEN:
         raise ValueError("corrupt configuration")
 
