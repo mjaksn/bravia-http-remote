@@ -21,7 +21,7 @@
 # patch tag stops moving once the next one ships, so it can be both specific
 # and old enough. Check the age before bumping it: this one was 23 days when
 # it was pinned.
-FROM python:3.13.14-slim@sha256:9662417aace5ae7b8e2609cce472b72a8958e134ba372808abe9cc1a0c0125e6
+FROM python:3.14.7-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5
 
 LABEL org.opencontainers.image.title="Bravia Console" \
       org.opencontainers.image.description="Single-page controller for Sony Bravia displays over the Bravia HTTP REST API" \
