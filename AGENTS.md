@@ -102,10 +102,26 @@ outlive the file. Three things guard this and all three should stay:
 - `seal.py` refuses to write into a directory holding a `Dockerfile`.
 - CI checks the running container serves the placeholder.
 - The release workflow refuses to publish if `deploy-config.js` is not the
-  placeholder.
+  placeholder. That refusal is a step in the `build` job, which every image job
+  waits on, rather than beside the build that makes the image. The image jobs are
+  calls to a shared workflow now, and this guarantee belongs to this project
+  rather than to the plumbing.
 
 `BRAVIA_TV` has no default. A proxy pointed at nothing starts happily and fails
 on every request, which is a slower way to learn the same thing.
+
+The building and pushing itself lives in `mjaksn/workflows` and is called from
+`release.yml`, pinned by commit like any other third-party step. It was the same
+hundred and forty lines here as in nettail and readerboard, and this repository's
+copy had drifted furthest. Two calls rather than one, and that is load-bearing: a
+called workflow succeeds only when every job in it succeeds, so a single call
+covering both registries would put Docker Hub in front of the release page. The
+Dockerfile stays here, for the reason above.
+
+Because that shared file is one point of failure for three releases, and a release
+is the hardest thing here to rehearse, CI calls the GHCR half with `push: false` on
+one platform. That is the `rehearsal` job, and it is why the publishing path is
+exercised on a pull request rather than first at tag time.
 
 ## Releasing
 
