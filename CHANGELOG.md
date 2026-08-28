@@ -35,14 +35,14 @@ release page.
   service or a Docker container, and offers to seal a locked config on the way.
   Every answer has a flag, and `--non-interactive` fails rather than hanging
   when nobody is there to answer.
-- **A remembered visit now shows the password prompt while it signs itself
-  in**, rather than a blank page. Opening the sealed config takes 120,000
+- **A remembered visit now says it is signing you in**, rather than showing a
+  blank page while it works. Opening the sealed config takes 120,000
   rounds of PBKDF2 on the main thread, and the automatic path ran it with the
   empty state already hidden and no dialog up, so a phone showed several
-  seconds of frozen nothing. The prompt now goes up first, says "Signing you
-  in", and is already there if the saved password has gone stale against a
-  repacked deployment. The typed path was always written this way; this brings
-  the automatic one into line with it.
+  seconds of frozen nothing. The empty state now says so and is repainted before
+  the work starts, the way the typed path has always announced itself. The
+  message goes in the empty state rather than in the prompt deliberately: the
+  prompt being open is how the rest of the app knows the attempt is over.
 - **Stay signed in on this computer**, a checkbox on the password prompt of a
   locked deployment. Ticked, it saves the deployment password in that browser's
   localStorage, and later visits open themselves with nothing to type. A saved
