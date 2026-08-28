@@ -8,7 +8,7 @@ The release workflow lifts the section matching a pushed tag out of this file an
 publishes it as the release notes, so a version with no section here does not get a
 release page.
 
-## [Unreleased]
+## [1.1.0] - 2026-08-28
 
 ### Added
 
@@ -76,5 +76,5 @@ what it does as of this version rather than an account of how it got here.
   systems, and a tagged release built from a proven artefact with notes taken
   from this file.
 
-[Unreleased]: https://github.com/mjaksn/bravia-http-remote/compare/v1.0.0...HEAD
+[1.1.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.0.0

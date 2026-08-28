@@ -9,7 +9,7 @@
 /* Kept equal to `version` in package.json, and to the tag a release is cut
    from. tests/lint.js fails a pull request where the two disagree, and the
    release workflow refuses a tag that disagrees with either. */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 const LS_KEY = 'bravia-console-config';
 const LS_INTERVAL_KEY = 'bravia-console-interval';
