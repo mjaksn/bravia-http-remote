@@ -9,7 +9,7 @@
 /* Kept equal to `version` in package.json, and to the tag a release is cut
    from. tests/lint.js fails a pull request where the two disagree, and the
    release workflow refuses a tag that disagrees with either. */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 const LS_KEY = 'bravia-console-config';
 const LS_INTERVAL_KEY = 'bravia-console-interval';
@@ -1465,11 +1465,24 @@ async function unlockFromSavedPassword() {
   // The same paintPause as the typed path, and for the same reason: the
   // "Signing you in" state has to reach the screen before the main thread
   // disappears into the KDF.
-  openUnlock();
-  const btn = $('btn-unlock');
-  const label = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Signing you in…';
+  // Said in the empty state rather than in the prompt, and that placement is
+  // load-bearing rather than cosmetic.
+  //
+  // A locked build hides the empty state at boot, so deriving straight away
+  // left a blank, frozen page for the whole of the stretching, which on a
+  // phone is seconds. Showing something is the fix. Showing it in the unlock
+  // dialog is not, because the dialog being open is how the rest of the app,
+  // and the suites, know the attempt is over: opening it first makes "the
+  // prompt is up" true while a password already being tried is still in
+  // storage, and a check reading storage at that moment sees the stale value.
+  //
+  // So the dialog stays shut until there is an outcome, and the waiting is
+  // said here. The same paintPause as the typed path, so the message reaches
+  // the screen before the main thread disappears into the KDF.
+  const empty = $('empty-state');
+  const emptyHtml = empty.innerHTML;
+  empty.textContent = 'Signing you in…';
+  empty.hidden = false;
   await paintPause();
 
   let secret = null;
@@ -1477,14 +1490,13 @@ async function unlockFromSavedPassword() {
     secret = Lockbox.open(password, sealedCfg);
   } catch {
     forgetPassword();
-    btn.disabled = false;
-    btn.textContent = label;
+    empty.innerHTML = emptyHtml;
+    empty.hidden = true;
     return false;
   }
-  btn.disabled = false;
-  btn.textContent = label;
-  // Clears `locked` and closes the prompt this function opened.
+  // Hides the empty state itself, so the message goes with it.
   applyUnlockedSecret(secret);
+  empty.innerHTML = emptyHtml;
   return true;
 }
 
