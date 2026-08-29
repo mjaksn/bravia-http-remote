@@ -144,7 +144,9 @@ a laptop, which puts the page and the display on different origins, which is
 exactly the case a missing CORS preflight breaks.
 
 ```bash
-docker run -d --name bravia-console --restart unless-stopped     -e BRAVIA_TV=192.168.1.50 -p 8585:8585     ghcr.io/mjaksn/bravia-http-remote:latest
+docker run -d --name bravia-console --restart unless-stopped \
+    -e BRAVIA_TV=192.168.1.50 -p 8585:8585 \
+    ghcr.io/mjaksn/bravia-http-remote:latest
 ```
 
 Then open <http://this-machine:8585>. `docker-compose.yml` is the same thing as
@@ -160,7 +162,7 @@ from the machine running it.
 **A sealed config is mounted, never built in:**
 
 ```bash
-docker run ... -v ./deploy-config.js:/app/deploy-config.js:ro ...
+docker run ... -v ~/deploy-config.js:/app/deploy-config.js:ro ...
 ```
 
 The image ships the placeholder. Baking a sealed one into a published image
@@ -184,7 +186,8 @@ port. Every answer can be given as a flag instead, and `--non-interactive`
 refuses to guess rather than hanging on a prompt:
 
 ```bash
-sudo scripts/install.sh --docker --tv 192.168.1.50 --port 8585     --lock --psk-file ./psk --password-file ./pw --non-interactive
+sudo scripts/install.sh --docker --tv 192.168.1.50 --port 8585 \
+    --lock --psk-file ./psk --password-file ./pw --non-interactive
 ```
 
 Neither the pre-shared key nor the deployment password is ever taken as an
@@ -232,11 +235,13 @@ It asks for the password twice without echoing it, seals the details, opens the
 result again to prove the file works, and writes the file.
 
 **Write it outside the checkout**, as above. `seal.py` refuses to write into a
-directory holding a `Dockerfile`, which this repository root is, so a bare
-`--out deploy-config.js` from a clone is turned away on purpose: a sealed config
-in the working tree is one `docker build` away from being published inside an
-image. It also refuses to overwrite an existing file, and the repository ships
-the placeholder.
+Docker build context, which means a directory holding a `Dockerfile` and every
+directory beneath one. This repository root is such a directory, so both a bare
+`--out deploy-config.js` and an `--out content/deploy-config.js` from a clone are
+turned away on purpose: a sealed config in the working tree is one `docker build`
+away from being published inside an image. It also refuses to overwrite an
+existing file, and the repository ships the placeholder. `--force` lifts both
+refusals, and the build context one is the one to think twice about.
 
 The password is never taken as an argument, since an argument is visible in
 `ps`. For unattended use there is `--password-file`, and `--psk-file` for the
@@ -345,8 +350,9 @@ served over plain `http://` on a LAN, exactly where it would be missing.
 | `ircc` (SOAP)| `X_SendIRCC` for remote key codes                                        |
 
 When a display does not offer `guide.getSupportedApiInfo`, capability discovery
-falls back to `getMethodTypes`, which is probed on every service in the table
-above and on `videoScreen`.
+falls back to `getMethodTypes`, which is probed on every JSON-RPC service in the
+table above and on `videoScreen`. `ircc` is left out of that probe: it is a SOAP
+endpoint rather than a JSON-RPC service.
 
 ## License
 
