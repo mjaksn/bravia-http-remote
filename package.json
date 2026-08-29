@@ -1,6 +1,6 @@
 {
   "name": "bravia-console",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Single-page controller for Sony Bravia displays over the Bravia HTTP REST API",
   "license": "MIT",
   "homepage": "https://github.com/mjaksn/bravia-http-remote",

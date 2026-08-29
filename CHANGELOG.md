@@ -8,6 +8,33 @@ The release workflow lifts the section matching a pushed tag out of this file an
 publishes it as the release notes, so a version with no section here does not get a
 release page.
 
+## [1.2.0] - 2026-08-29
+
+### Removed
+
+- **`proxy.js`**, the Node flavor of the bundled proxy. `proxy.py` stays and is
+  unchanged, so the console itself works exactly as it did.
+
+  The two were documented as identical and were not. `proxy.js` reported the
+  display address without its port, both from `/__proxy` and in its own error
+  text; it forwarded any method under `/sony/` where `proxy.py` answers POST
+  alone; and it served `/__proxy` for any method, where `proxy.py` serves it on
+  GET. None of that ever reached the console, which sends POST to `/sony/*` and
+  reads one field from `/__proxy` and nothing else, which is why the drift went
+  unnoticed.
+
+  It went unnoticed because nothing ran the file. The image, the installer and
+  the systemd unit all run `proxy.py`, and CI exercised that one alone;
+  `proxy.js` was syntax-checked and never started. Python is a requirement of
+  this project regardless, since `seal.py` and `scripts/install.sh` both need
+  it, so a second flavor bought a choice that almost nobody was in a position
+  to take. One proxy that CI actually drives is worth more than two that agree
+  only on paper.
+
+  If you were running `node proxy.js <tv-ip>`, run `python proxy.py <tv-ip>`
+  instead. The arguments, the default port and the default bind address are all
+  the same. The file is gone from the release archive.
+
 ## [1.1.0] - 2026-08-28
 
 ### Added
@@ -76,5 +103,6 @@ what it does as of this version rather than an account of how it got here.
   systems, and a tagged release built from a proven artefact with notes taken
   from this file.
 
+[1.2.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.2.0
 [1.1.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.0.0
