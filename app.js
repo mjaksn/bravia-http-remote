@@ -9,7 +9,7 @@
 /* Kept equal to `version` in package.json, and to the tag a release is cut
    from. tests/lint.js fails a pull request where the two disagree, and the
    release workflow refuses a tag that disagrees with either. */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 const LS_KEY = 'bravia-console-config';
 const LS_INTERVAL_KEY = 'bravia-console-interval';
@@ -20,7 +20,7 @@ const RPC_TIMEOUT_MS = 8000;
 let cfg = null;                 // {host, interval}; the PSK is held separately
 let sealedCfg = null;           // sealed blob from deploy-config.js, if deployed
 let locked = false;             // sealed config present and not yet opened
-let proxyDetected = false;      // page served by proxy.py or proxy.js
+let proxyDetected = false;      // page served by the bundled proxy.py
 let apiMap = null;              // {service: {method: Set(versions)}} from discovery
 let unsupported = new Set();    // "service.method" learned from errors 12/14/501
 let versionOverride = new Map();// "service.method" → version that actually worked
@@ -353,8 +353,8 @@ async function connect() {
         : 'Could not reach the display at ' + (apiBase() || 'this page’s origin') + '.\n' +
           '• If the TV is on and the address is right, the browser probably blocked the ' +
           'cross-origin request (many Bravia displays never answer CORS preflights).\n' +
-          '• Fix: serve this app through the bundled proxy (python proxy.py <tv-ip> or ' +
-          'node proxy.js <tv-ip>) and open http://localhost:8585; see README.md. ' +
+          '• Fix: serve this app through the bundled proxy (python proxy.py <tv-ip>) ' +
+          'and open http://localhost:8585; see README.md. ' +
           'Failing that, launch a browser with web security disabled.');
       $('empty-state').hidden = true;
       retryTimer = setTimeout(connect, Math.max(5, cfg.interval) * 1000);

@@ -14,7 +14,7 @@ not accidents.
 | `pack.html` | Standalone page that writes `deploy-config.js`. |
 | `seal.py` | The same file from a shell, for an installer or a machine with no display. |
 | `deploy-config.js` | Placeholder in the repository. A real one is produced per deployment. |
-| `proxy.js`, `proxy.py` | Optional same-origin proxy, one per runtime, kept behaviourally identical. |
+| `proxy.py` | Optional same-origin proxy, for displays that will not answer a CORS preflight. |
 | `tests/` | Node unit tests and browser suites. No test framework. |
 | `scripts/build.js` | Builds the release archive, zip writer included. One file list, used by both workflows. |
 | `scripts/install.sh` | Installs the console as a systemd service or a Docker container, sealing a config on the way if asked. |
