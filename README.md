@@ -115,15 +115,11 @@ plain-HTTP calls to the TV as mixed content, independent of CORS.
 Not every Bravia answers preflight requests. When yours does not, the proxy sits
 in between and makes every request same-origin, so CORS never comes into it. It
 also works regardless of what the TV's headers say, which makes it the reliable
-choice if you would rather not think about any of the above. Two identical
-flavors are included; use whichever runtime you have:
+choice if you would rather not think about any of the above. It is standard
+library only, so Python 3 is all it needs:
 
 ```bash
 python proxy.py 192.168.1.50
-```
-
-```bash
-node proxy.js 192.168.1.50
 ```
 
 Then open <http://localhost:8585>. The app auto-detects the proxy; you can leave

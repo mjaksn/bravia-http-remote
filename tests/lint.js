@@ -17,13 +17,13 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-const JS = ['app.js', 'lockbox.js', 'deploy-config.js', 'proxy.js',
+const JS = ['app.js', 'lockbox.js', 'deploy-config.js',
             'scripts/build.js', 'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js',
             'tests/lockbox.test.js', 'tests/seal.test.js'];
 
 const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
                'index.html', 'pack.html', 'style.css', 'app.js', 'lockbox.js',
-               'deploy-config.js', 'proxy.js', 'proxy.py', 'package.json',
+               'deploy-config.js', 'proxy.py', 'package.json',
                'scripts/build.js', '.github/workflows/ci.yml', '.github/workflows/release.yml',
                'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js', 'tests/lockbox.test.js',
                'tests/browser/harness.js', 'tests/browser/sealed.html',

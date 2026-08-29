@@ -30,7 +30,6 @@ const FILES = [
   'lockbox.js',
   'deploy-config.js',
   'pack.html',
-  'proxy.js',
   'proxy.py',
   'seal.py',
   'scripts/install.sh',
