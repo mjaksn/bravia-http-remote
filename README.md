@@ -1,5 +1,8 @@
 # Bravia Console
 
+[![CI](https://github.com/mjaksn/bravia-http-remote/actions/workflows/ci.yml/badge.svg)](https://github.com/mjaksn/bravia-http-remote/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A single-page vanilla JS web app for controlling a Sony Bravia TV / professional display over
 your local network. It talks **directly to the TV** using the Bravia HTTP REST API
 (JSON-RPC over plain HTTP, no encryption) and authenticates with the
@@ -344,3 +347,7 @@ served over plain `http://` on a LAN, exactly where it would be missing.
 When a display does not offer `guide.getSupportedApiInfo`, capability discovery
 falls back to `getMethodTypes`, which is probed on every service in the table
 above and on `videoScreen`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
