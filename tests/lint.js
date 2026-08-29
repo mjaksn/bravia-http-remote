@@ -4,10 +4,10 @@
  *
  *   node tests/lint.js
  *
- * Four things, each of which has gone wrong somewhere before: JavaScript
- * that does not parse, a version that agrees with itself in only one
- * place, a real deployment config committed by accident, and punctuation
- * this project does not use.
+ * Four things, each of which has gone wrong somewhere before: a script
+ * that does not parse, whether JavaScript, shell or Python; a version that
+ * agrees with itself in only one place; a real deployment config committed
+ * by accident; and punctuation this project does not use.
  */
 
 const { execSync, spawnSync } = require('child_process');

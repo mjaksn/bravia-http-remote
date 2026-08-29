@@ -12,10 +12,12 @@ not accidents.
 | `index.html`, `style.css`, `app.js` | The console itself. |
 | `lockbox.js` | Self-contained SHA-256 / HMAC / PBKDF2 used to seal a deployment config. |
 | `pack.html` | Standalone page that writes `deploy-config.js`. |
+| `seal.py` | The same file from a shell, for an installer or a machine with no display. |
 | `deploy-config.js` | Placeholder in the repository. A real one is produced per deployment. |
 | `proxy.js`, `proxy.py` | Optional same-origin proxy, one per runtime, kept behaviourally identical. |
 | `tests/` | Node unit tests and browser suites. No test framework. |
 | `scripts/build.js` | Builds the release archive, zip writer included. One file list, used by both workflows. |
+| `scripts/install.sh` | Installs the console as a systemd service or a Docker container, sealing a config on the way if asked. |
 
 ## Rules that the tooling enforces
 
@@ -50,8 +52,9 @@ worth knowing before rather than after:
 ```bash
 npm run lint          # parses, versions, placeholder, punctuation
 npm run test:unit     # lockbox primitives against Node's crypto
+npm run test:seal     # seal.py and lockbox.js open each other's work
 npm run test:browser  # the real pages driven in headless Chrome
-npm test              # all three
+npm test              # all four
 ```
 
 The browser suites need Chrome, Chromium or Edge; set `CHROME_PATH` if it is somewhere

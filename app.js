@@ -20,7 +20,7 @@ const RPC_TIMEOUT_MS = 8000;
 let cfg = null;                 // {host, interval}; the PSK is held separately
 let sealedCfg = null;           // sealed blob from deploy-config.js, if deployed
 let locked = false;             // sealed config present and not yet opened
-let proxyDetected = false;      // page served by bundled proxy.js
+let proxyDetected = false;      // page served by proxy.py or proxy.js
 let apiMap = null;              // {service: {method: Set(versions)}} from discovery
 let unsupported = new Set();    // "service.method" learned from errors 12/14/501
 let versionOverride = new Map();// "service.method" → version that actually worked
@@ -1455,30 +1455,25 @@ async function unlockFromSavedPassword() {
   const password = readRememberedPassword();
   if (password === null) return false;
 
-  // The prompt goes up before the key derivation rather than after it, and
-  // says what is happening. Deriving first would hold the main thread for
-  // the whole of the stretching with `empty-state` already hidden and no
-  // dialog up, which on a phone is several seconds of blank, frozen page.
-  // The same stall would also delay the prompt appearing when a saved
-  // password has gone stale against a repacked deployment.
+  // Something is said before the key derivation rather than after it. A
+  // locked build hides the empty state at boot, so deriving straight away
+  // would hold the main thread for the whole of the stretching with nothing
+  // on screen and no dialog up, which on a phone is several seconds of
+  // blank, frozen page. The same stall would also delay the prompt
+  // appearing when a saved password has gone stale against a repacked
+  // deployment.
+  //
+  // Said in the empty state rather than in the unlock dialog, and that
+  // placement is load-bearing rather than cosmetic: the dialog being open is
+  // how the rest of the app, and the suites, know the attempt is over.
+  // Opening it first would make "the prompt is up" true while a password
+  // already being tried is still in storage, and a check reading storage at
+  // that moment sees the stale value. So the dialog stays shut until there
+  // is an outcome.
   //
   // The same paintPause as the typed path, and for the same reason: the
   // "Signing you in" state has to reach the screen before the main thread
   // disappears into the KDF.
-  // Said in the empty state rather than in the prompt, and that placement is
-  // load-bearing rather than cosmetic.
-  //
-  // A locked build hides the empty state at boot, so deriving straight away
-  // left a blank, frozen page for the whole of the stretching, which on a
-  // phone is seconds. Showing something is the fix. Showing it in the unlock
-  // dialog is not, because the dialog being open is how the rest of the app,
-  // and the suites, know the attempt is over: opening it first makes "the
-  // prompt is up" true while a password already being tried is still in
-  // storage, and a check reading storage at that moment sees the stale value.
-  //
-  // So the dialog stays shut until there is an outcome, and the waiting is
-  // said here. The same paintPause as the typed path, so the message reaches
-  // the screen before the main thread disappears into the KDF.
   const empty = $('empty-state');
   const emptyHtml = empty.innerHTML;
   empty.textContent = 'Signing you in…';
