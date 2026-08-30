@@ -67,8 +67,9 @@ worth knowing before rather than after:
 npm run lint          # parses, versions, placeholder, card lists, punctuation
 npm run test:unit     # lockbox primitives against Node's crypto
 npm run test:seal     # seal.py and lockbox.js open each other's work
+npm run test:install  # the installer's card handling, as bash functions
 npm run test:browser  # the real pages driven in headless Chrome
-npm test              # all four
+npm test              # all five
 ```
 
 The browser suites need Chrome, Chromium or Edge; set `CHROME_PATH` if it is somewhere
@@ -77,6 +78,12 @@ deployment config per suite, so the working tree is never modified by a test run
 `--root DIR` to `tests/run-browser.js` to run them against an unpacked release archive
 instead of the working tree, which is what continuous integration does to prove the
 artefact works.
+
+`tests/install.test.js` needs none of that. `scripts/install.sh` wants root and a real
+machine to run end to end, so the test lifts the functions it cares about out of the
+script by name and drives them in bash. What it checks is therefore the shipped code
+rather than a copy that would go on passing after the script changed, and a function
+renamed or removed there fails the test outright rather than quietly checking nothing.
 
 ## Two implementations of one format
 

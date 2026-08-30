@@ -122,6 +122,49 @@ r = run([
 ].join('\n'));
 eq('saved_cards says nothing when there is no config at all', lastLine(r.stdout), '(end)');
 
+/* The placeholder this project ships explains the setting by showing the
+   same assignment, indented, inside its opening comment. A config copied
+   from it and edited by hand must carry the list underneath, never the
+   example. The real file is used here rather than a handwritten stand-in,
+   so that rewording that comment cannot quietly slip past this. */
+fs.copyFileSync(path.join(ROOT, 'deploy-config.js'), cfg);
+r = run('saved_cards\necho "(end)"');
+eq('the example inside the placeholder comment is not a card list',
+   lastLine(r.stdout), '(end)');
+
+r = run([
+  'printf "%s\\n" "   window.BRAVIA_HIDDEN_CARDS = [\'apps\', \'keys\'];" > "$CONFIG_FILE"',
+  'printf "%s\\n" "window.BRAVIA_HIDDEN_CARDS = [\'volume\'];" >> "$CONFIG_FILE"',
+  'saved_cards',
+].join('\n'));
+eq('an indented example is passed over for the assignment that runs',
+   lastLine(r.stdout), 'volume');
+
+/* The same the other way round, which is the case taking the last match
+   cannot get right on its own: the assignment that runs comes first and the
+   example explaining it comes after. */
+r = run([
+  'printf "%s\\n" "window.BRAVIA_HIDDEN_CARDS = [\'volume\'];" > "$CONFIG_FILE"',
+  'printf "%s\\n" "/* for example:" >> "$CONFIG_FILE"',
+  'printf "%s\\n" "   window.BRAVIA_HIDDEN_CARDS = [\'apps\', \'keys\']; */" >> "$CONFIG_FILE"',
+  'saved_cards',
+].join('\n'));
+eq('an example below the assignment is passed over too',
+   lastLine(r.stdout), 'volume');
+
+/* Two that both run is a hand-edit rather than anything this project
+   writes, and the browser would keep the later one. So does this. */
+r = run([
+  'printf "%s\\n" "window.BRAVIA_HIDDEN_CARDS = [\'apps\'];" > "$CONFIG_FILE"',
+  'printf "%s\\n" "window.BRAVIA_HIDDEN_CARDS = [\'volume\'];" >> "$CONFIG_FILE"',
+  // Every line it prints, not just the last, since two of them is the
+  // failure being ruled out here.
+  'saved_cards | tr "\\n" "|"',
+  'echo',
+].join('\n'));
+eq('two assignments that both run leave the later one',
+   r.stdout.trim(), 'volume|');
+
 /* The first thing Copilot found: a --lock run that nobody answered used to
    seal an empty list straight over a real one. */
 r = run([

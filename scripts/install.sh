@@ -248,7 +248,15 @@ check_hide() {
 # inside it.
 saved_cards() {
     [ -f "$CONFIG_FILE" ] || return 0
-    sed -n "s/.*BRAVIA_HIDDEN_CARDS = \[\(.*\)\];.*/\1/p" "$CONFIG_FILE" | tr -d "' "
+    # Anchored at the first column, because the placeholder this project
+    # ships carries an example of the same assignment inside its opening
+    # comment, indented. A config copied from that file and edited by hand
+    # would otherwise carry the example over rather than the list under it.
+    #
+    # And the last one wins, which is what the browser would be left with
+    # if a file somehow held two.
+    sed -n "s/^window\\.BRAVIA_HIDDEN_CARDS = \\[\\(.*\\)\\];.*/\\1/p" "$CONFIG_FILE" \
+        | tail -n 1 | tr -d "' "
 }
 
 # A seal writes the file the cards live in from scratch, so a run that was
