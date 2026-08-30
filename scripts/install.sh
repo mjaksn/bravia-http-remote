@@ -3,10 +3,11 @@
 # Install Bravia Console, either as a systemd service or as a Docker container,
 # and optionally seal a password-protected deployment config on the way.
 #
-# It asks which, then asks for the display's address, the pre-shared key set on
-# it, and the port to serve on. Every answer can be given as a flag instead,
-# and --non-interactive refuses to guess rather than hanging on a prompt that
-# nobody is there to answer.
+# It asks which, then asks for the display's address and the port to serve on,
+# and, when it is sealing a locked config, for the pre-shared key set on the
+# display. Every answer can be given as a flag instead, and --non-interactive
+# refuses to guess rather than hanging on a prompt that nobody is there to
+# answer.
 #
 # Safe to run more than once. An existing sealed config is left alone unless
 # you ask for a new one.
