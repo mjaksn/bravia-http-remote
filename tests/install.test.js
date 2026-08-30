@@ -64,7 +64,9 @@ if (!haveBash()) {
 /* The functions, taken out of the script by name: everything from the line
    that opens one to the closing brace in the first column, which is the
    shape every one of them has. */
-const SOURCE = fs.readFileSync(SCRIPT, 'utf8').split('\n');
+/* Split on either ending. A Windows checkout has this file in CRLF, and a
+   closing brace with a carriage return still stuck to it matches nothing. */
+const SOURCE = fs.readFileSync(SCRIPT, 'utf8').split(/\r?\n/);
 
 function lift(name) {
   const open = SOURCE.findIndex((line) => line.startsWith(name + '() {'));
