@@ -61,6 +61,22 @@ On the TV: **Settings → Network → Home Network Setup → IP Control**
 3. **Remote start** → *On* (required if you want to wake the TV from standby;
    browsers cannot send Wake-on-LAN packets)
 
+## Getting it
+
+Download the archive from the
+[latest release](https://github.com/mjaksn/bravia-http-remote/releases/latest)
+and unpack it. It carries the app, `proxy.py`, `seal.py`, `scripts/install.sh`
+and this file, and unpacks into a directory of its own:
+
+```bash
+unzip bravia-console-*.zip
+cd bravia-console-*/
+```
+
+A clone works just as well, and is the right thing if you mean to change
+anything. Either way there is nothing to install and nothing to build: what is
+in the directory is what runs in the browser.
+
 ## Running the app
 
 Whether you need the bundled proxy depends on your TV. Every request this app
@@ -71,7 +87,9 @@ preflights with permissive CORS headers, and the app then works straight from a
 blocks every call. There is no middle ground: a TV that refuses preflights leaves
 the whole dashboard empty rather than half working.
 
-So try Option A first, and fall back to the proxy only if it fails.
+So try Option A first, and fall back to the proxy only if it fails. Current
+Chrome and Edge add a step of their own here: see the note on the local-network
+permission prompt under [Notes](#notes).
 
 ### Option A: open index.html directly
 
@@ -183,10 +201,12 @@ container, and offers to seal a locked config on the way:
 sudo scripts/install.sh
 ```
 
-It asks which, then asks for the display's address, the port, and which cards
-this copy should leave out, listing them to pick from; see [Leaving cards
-out](#leaving-cards-out). The pre-shared key is asked for only when it is
-sealing a locked config. Every answer can be given as a flag instead, and
+It asks which, then asks for the display's address and the port, for the address
+to serve on if this is a systemd install, and for which cards this copy should
+leave out, listing them to pick from; see [Leaving cards
+out](#leaving-cards-out). Sealing a locked config adds two more questions: the
+pre-shared key set on the display, and the starting refresh interval. Every
+answer can be given as a flag instead, `--bind` and `--interval` among them, and
 `--non-interactive` refuses to guess rather than hanging on a prompt:
 
 ```bash
@@ -199,6 +219,22 @@ Neither the pre-shared key nor the deployment password is ever taken as an
 argument, or passed as one to `seal.py`, because an argument is visible in `ps`
 to every user on the machine. Both are asked for, or read from a file. Delete
 those files afterwards.
+
+`--bind` is for the systemd install, which serves on `0.0.0.0` unless it is
+given something narrower; under Docker what is exposed is decided by the
+published port instead, and the flag is refused rather than quietly ignored.
+
+Either way the config the installer settles on lands at
+`/etc/bravia-console/deploy-config.js`. Sealed, it holds the address, the key
+and any card list, encrypted. Unsealed, it holds the card list and nothing else,
+no address and no key, and that is the file to edit by hand if the cards change
+later.
+
+The two installs then use it differently, which matters when you come to change
+it. The Docker install mounts that path, so editing or deleting the file takes
+effect once the container is made again. The systemd install copies it to
+`/opt/bravia-console/deploy-config.js`, which is what actually gets served, so
+changing the one under `/etc` does nothing until the installer is run again.
 
 ## Deploying a locked copy
 
@@ -392,9 +428,11 @@ is for the ones it supports and a deployment has no use for.
   key is the only barrier and is worth making long and non-obvious. A couple of
   methods (`getPowerStatus`, `getRemoteControllerInfo`) are answered without any
   key at all; the rest return `403 Forbidden`.
-- Chromium is moving toward prompting for permission before a page may reach
-  local-network addresses. If a browser update ever starts blocking the direct
-  connection, the proxy in Option C is the way back.
+- Chrome and Edge now ask permission before a page may reach local-network
+  addresses, a restriction that shipped in Chrome 141. Under Option A or B the
+  first connection to the display raises that prompt, and the dashboard stays
+  empty until it is allowed. The proxy in Option C is the way back if a browser
+  stops offering the choice.
 - Wake-from-standby uses `system.setPowerStatus`; it only works when the TV's
   network-standby ("Remote start") is enabled. Some models also power the API
   down in deep eco standby.
