@@ -51,6 +51,13 @@ release page.
   carry an empty list, since one committed here would take a card away from
   every clone.
 
+  Re-running the installer keeps the answer. A run that is neither asked nor
+  told carries the last one into whatever it writes, sealed or not, and a seal
+  that fails partway leaves the config it would have replaced exactly where it
+  was rather than taking a wall panel's card list with it.
+  `tests/install.test.js` holds both to that, driving the script's own
+  functions, since the script end to end wants root and a real machine.
+
 ## [1.2.0] - 2026-08-29
 
 ### Removed

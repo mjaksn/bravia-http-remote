@@ -20,7 +20,8 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const JS = ['app.js', 'lockbox.js', 'deploy-config.js',
             'scripts/build.js', 'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js',
-            'tests/lockbox.test.js', 'tests/seal.test.js'];
+            'tests/lockbox.test.js', 'tests/seal.test.js',
+            'tests/install.test.js'];
 
 const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
                'index.html', 'pack.html', 'style.css', 'app.js', 'lockbox.js',
@@ -29,7 +30,7 @@ const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
                'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js', 'tests/lockbox.test.js',
                'tests/browser/harness.js', 'tests/browser/sealed.html',
                'tests/browser/unsealed.html', 'tests/browser/authfail.html',
-               'tests/browser/cards.html',
+               'tests/browser/cards.html', 'tests/install.test.js',
                'seal.py', 'scripts/install.sh', 'Dockerfile', '.dockerignore',
                'docker-compose.yml'];
 

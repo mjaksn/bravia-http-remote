@@ -24,7 +24,8 @@
     "lint": "node tests/lint.js",
     "test:unit": "node tests/lockbox.test.js",
     "test:seal": "node tests/seal.test.js",
+    "test:install": "node tests/install.test.js",
     "test:browser": "node tests/run-browser.js",
-    "test": "npm run lint && npm run test:unit && npm run test:seal && npm run test:browser"
+    "test": "npm run lint && npm run test:unit && npm run test:seal && npm run test:install && npm run test:browser"
   }
 }
