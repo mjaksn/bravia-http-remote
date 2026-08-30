@@ -81,7 +81,7 @@ function lift(name) {
 
 const PRELUDE = ['say', 'die', 'list_cards', 'card_names', 'check_hide',
                  'saved_cards', 'carry_over_cards', 'write_card_config',
-                 'seal_to'].map(lift).join('\n\n');
+                 'seal_to', 'join_hide', 'settle_cards'].map(lift).join('\n\n');
 
 /* Outside the checkout on purpose: seal.py refuses to write anywhere under a
    directory holding a Dockerfile, and the repository root is one. */
@@ -214,6 +214,40 @@ r = run([
 ok('a saved name that is not a card is refused, not carried over',
    before === 0 && r.status !== 0 && /not a card/.test(r.stderr),
    'good run exited ' + before + ', bad run exited ' + r.status + '\n  ' + r.stderr);
+
+/* ── telling "put them all back" apart from "say nothing" ───────────── */
+
+/* Three states, not two. A run can name cards, name none, or not raise the
+   subject; only the last keeps what it found. Before --hide was tracked
+   apart from its value, naming none and saying nothing were one state, and
+   clearing a list was reachable from the prompt alone. */
+function settle(vars) {
+  return run([
+    'write_card_config "$CONFIG_FILE" "apps,keys"',
+    'ASKED=0',
+    'KEEPING=0',
+    'INTERACTIVE=0',
+    vars,
+    'settle_cards',
+    'echo "ASKED=$ASKED HIDE=$HIDE"',
+  ].join('\n'));
+}
+
+eq('naming cards settles the list to those',
+   lastLine(settle('HIDE="volume"\nHIDE_SET=1').stdout), 'ASKED=1 HIDE=volume');
+
+eq("an empty --hide settles it to none, which is an answer",
+   lastLine(settle('HIDE=""\nHIDE_SET=1').stdout), 'ASKED=1 HIDE=');
+
+eq('a run that never raised it settles nothing',
+   lastLine(settle('HIDE=""\nHIDE_SET=0').stdout), 'ASKED=0 HIDE=');
+
+/* An empty piece contributes nothing rather than a trailing comma, which
+   check_hide would otherwise read as a card with no name at all. */
+r = run('echo "[$(join_hide "apps" "")]"\necho "[$(join_hide "" "apps")]"\n' +
+        'echo "[$(join_hide "apps" "keys")]"\necho "[$(join_hide "" "")]"');
+eq('join_hide leaves no trailing comma behind an empty piece',
+   r.stdout.trim().split('\n').join(' '), '[apps] [apps] [apps,keys] []');
 
 /* ── what a failed seal leaves behind ───────────────────────────────── */
 

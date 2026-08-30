@@ -49,8 +49,9 @@ Options:
   --psk-file FILE      read the display's pre-shared key from this file
   --interval SECONDS   starting refresh interval when sealing (default 5)
   --hide CARDS         cards the console should never draw, comma-separated;
-                       repeatable. Asked for when there is a terminal; a run
-                       with neither keeps what an earlier run settled
+                       repeatable, and --hide '' puts every card back. Asked
+                       for when there is a terminal; a run with neither keeps
+                       what an earlier run settled
   --password-file F    read the deployment password from this file
   --non-interactive    never prompt; fail if something needed is missing
   --no-start           install but do not start it
@@ -84,7 +85,12 @@ need() {
 # collapse into one comma-separated string here and are checked against the
 # cards that actually exist further down, once index.html has been found.
 join_hide() {
-    if [ -z "$1" ]; then printf '%s' "$2"; else printf '%s,%s' "$1" "$2"; fi
+    # An empty piece adds nothing. `--hide ''` is how a run says "put every
+    # card back", and joining it on would leave a trailing comma that
+    # check_hide would later read as a card with no name.
+    if [ -z "$2" ]; then printf '%s' "$1"
+    elif [ -z "$1" ]; then printf '%s' "$2"
+    else printf '%s,%s' "$1" "$2"; fi
 }
 
 MODE=""
@@ -96,6 +102,9 @@ PSK=""
 PSK_FILE=""
 INTERVAL=""
 HIDE=""
+# Whether --hide was passed, which is not the same as what it was passed:
+# `--hide ''` is an answer, and the answer is "none of them".
+HIDE_SET=0
 PASSWORD_FILE=""
 INTERACTIVE=1
 START_IT=1
@@ -116,8 +125,8 @@ while [ $# -gt 0 ]; do
         --psk-file=*) PSK_FILE="${1#*=}"; shift ;;
         --interval) INTERVAL="$(need "$@")"; shift 2 ;;
         --interval=*) INTERVAL="${1#*=}"; shift ;;
-        --hide) HIDE="$(join_hide "$HIDE" "$(need "$@")")"; shift 2 ;;
-        --hide=*) HIDE="$(join_hide "$HIDE" "${1#*=}")"; shift ;;
+        --hide) HIDE="$(join_hide "$HIDE" "$(need "$@")")"; HIDE_SET=1; shift 2 ;;
+        --hide=*) HIDE="$(join_hide "$HIDE" "${1#*=}")"; HIDE_SET=1; shift ;;
         --password-file) PASSWORD_FILE="$(need "$@")"; shift 2 ;;
         --password-file=*) PASSWORD_FILE="${1#*=}"; shift ;;
         --non-interactive) INTERACTIVE=0; shift ;;
@@ -257,6 +266,29 @@ saved_cards() {
     # if a file somehow held two.
     sed -n "s/^window\\.BRAVIA_HIDDEN_CARDS = \\[\\(.*\\)\\];.*/\\1/p" "$CONFIG_FILE" \
         | tail -n 1 | tr -d "' "
+}
+
+# Whether this run settles the card list at all, and to what. Sets ASKED as
+# well as HIDE, because "left alone" and "set to nothing" are different
+# answers and only one of them is a re-run keeping what it found.
+#
+# A --hide with a value is an answer. So is --hide with an empty one, which
+# is the only way a run with nobody at the terminal can put every card back;
+# without the flag being tracked apart from its value the two would be the
+# same state, and clearing would be reachable from the prompt alone.
+settle_cards() {
+    if [ "$KEEPING" -eq 1 ]; then
+        if [ "$HIDE_SET" -eq 1 ]; then
+            say "ignoring --hide: the sealed config already at $CONFIG_FILE decides that"
+            HIDE=""
+        fi
+    elif [ "$HIDE_SET" -eq 1 ]; then
+        check_hide "$HIDE"
+        ASKED=1
+    elif [ "$INTERACTIVE" -eq 1 ] && [ -t 0 ]; then
+        choose_cards
+        ASKED=1
+    fi
 }
 
 # A seal writes the file the cards live in from scratch, so a run that was
@@ -466,18 +498,7 @@ fi
 # find out that the answer was not carried over.
 ASKED=0
 
-if [ "$KEEPING" -eq 1 ]; then
-    if [ -n "$HIDE" ]; then
-        say "ignoring --hide: the sealed config already at $CONFIG_FILE decides that"
-        HIDE=""
-    fi
-elif [ -n "$HIDE" ]; then
-    check_hide "$HIDE"
-    ASKED=1
-elif [ "$INTERACTIVE" -eq 1 ] && [ -t 0 ]; then
-    choose_cards
-    ASKED=1
-fi
+settle_cards
 
 # == the sealed config =======================================================
 

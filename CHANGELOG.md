@@ -28,8 +28,9 @@ release page.
     the list travels inside the encrypted payload as `hiddenCards`.
   - During the install. `scripts/install.sh` lists the cards and asks which to
     leave out, sealed or not, and `--hide apps,keys` answers it without a
-    prompt. Without a seal it writes a `deploy-config.js` holding the list and
-    nothing else.
+    prompt, `--hide ''` puts every card back, and a re-run given neither keeps
+    what the last one settled. Without a seal it writes a `deploy-config.js`
+    holding the list and nothing else.
 
   A copy using both ways at once gets both lists. `seal.py` and the installer
   each refuse a name that is not a card, before anything is written and before

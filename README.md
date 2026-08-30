@@ -356,6 +356,9 @@ python seal.py --host 192.168.1.50 --psk-file ./psk --hide apps,keys,picture
 
 **During the install.** `scripts/install.sh` lists the cards and asks which to
 leave out, sealed or not, and `--hide apps,keys` answers it without a prompt.
+`--hide ''` answers it the other way, putting every card back, which a run with
+no terminal has no other way to say. A re-run given neither keeps what the last
+one settled.
 
 The names are `power`, `playing`, `volume`, `inputs`, `apps`, `keys`, `text`,
 `picture`, `sound`, `system` and `speaker`, in the order the page lays them out.
