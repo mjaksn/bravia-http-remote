@@ -1054,8 +1054,9 @@ function makeKeyGroup(title, names, byName) {
     grp.appendChild(h);
   }
 
-  // A cell is filled only when the TV reports that key, and anything the pad
-  // has no slot for (Home, say) falls through to the plain wrap below it.
+  // A cell is filled only when the TV reports that key. The plain wrap below
+  // takes the other groups, and would take any Navigation key the pad had no
+  // slot for; today every one of them has a cell.
   let loose = names;
   if (title === 'Navigation') {
     const inPad = new Set(DPAD_CELLS.flat().filter(n => names.includes(n)));

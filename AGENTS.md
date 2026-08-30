@@ -24,9 +24,9 @@ not accidents.
 `node tests/lint.js` runs on every pull request and fails on any of these, so they are
 worth knowing before rather than after:
 
-- **The version lives in two places and must agree**: `version` in `package.json` and
-  `APP_VERSION` in `app.js`. A release additionally requires the tag to match both, and
-  `CHANGELOG.md` to have a `## [x.y.z]` section for it.
+- **The version lives in three places and must agree**: `version` in `package.json`,
+  `APP_VERSION` in `app.js`, and a `## [x.y.z]` section in `CHANGELOG.md` for that same
+  number. A release additionally requires the tag to match the first two.
 - **`deploy-config.js` stays the placeholder.** Committing a sealed one would pin every
   clone to one display and put a real pre-shared key in the history.
 - **No em dashes and no double hyphens used as punctuation.** Long command line options,
@@ -41,8 +41,8 @@ worth knowing before rather than after:
 - **WebCrypto is not available.** The app is served over plain `http://` on a LAN, which
   is not a secure context, so `crypto.subtle` is missing exactly where it would be used.
   `crypto.getRandomValues` is fine. This is why `lockbox.js` implements its own hashing.
-- **Keep the two proxies in step.** A change to one belongs in the other, including its
-  comments and its usage text.
+- **`proxy.py` is the only proxy.** Its usage text and its comments are documentation
+  as much as the README is, so a change to what it accepts belongs in both.
 - **Prose the program emits is documentation.** Toasts, banner text, dialog copy and
   command line output age the same way a README does, and a claim usually appears in more
   than one place.
@@ -77,9 +77,11 @@ other open, in both directions, on every CI run and on both operating systems.
 If you touch the format in one, the test is what tells you about the other.
 
 Not every shared constant fails the same way, and the difference matters when
-you change one. `MAGIC` and `MAC_LEN` are compared directly by `lockbox.js`, so
-a disagreement there is refused outright. The salt length, the nonce length and
-the iteration count travel inside the blob and are read back from it, so the
+you change one. `MAC_LEN` is compared directly by `lockbox.js`, so a file whose
+tag is the wrong length is refused as corrupt. `MAGIC` is never compared at
+all: it is signed into the tag, so a disagreement there surfaces as a failed
+tag check and reads as access denied. The salt length, the nonce length and the
+iteration count travel inside the blob and are read back from it, so the
 console opens those whatever they are.
 
 `MAX_ITERATIONS` is the one that bites. `lockbox.js` refuses a blob claiming
@@ -102,7 +104,7 @@ which is a fair trade for a file on your own network. A published image changes
 the population to anyone who can pull it, permanently, because registry layers
 outlive the file. Three things guard this and all three should stay:
 
-- `seal.py` refuses to write into a directory holding a `Dockerfile`.
+- `seal.py` refuses to write anywhere under a directory holding a `Dockerfile`.
 - CI checks the running container serves the placeholder.
 - The release workflow refuses to publish if `deploy-config.js` is not the
   placeholder. That refusal is a step in the `build` job, which every image job

@@ -46,12 +46,13 @@ import secrets
 import sys
 from pathlib import Path
 
-# The format, not preferences. MAGIC and MAC_LEN are checked directly by
-# lockbox.js, so a change to either produces a file it refuses outright. The
-# lengths and the iteration count travel inside the blob and are read back
-# from it, so those the console will open whatever they are; the ceiling is
-# the exception, and it is why MAX_ITERATIONS is here. All of it is checked
-# against the browser in tests/seal.test.js.
+# The format, not preferences. MAC_LEN is compared directly by lockbox.js and
+# MAGIC is signed into the tag rather than compared, so a change to either
+# produces a file it refuses: a wrong length as a corrupt file, a wrong magic
+# as access denied. The lengths and the iteration count travel inside the blob
+# and are read back from it, so those the console will open whatever they are;
+# the ceiling is the exception, and it is why MAX_ITERATIONS is here. All of it
+# is checked against the browser in tests/seal.test.js.
 MAGIC = b"bravia-lockbox-1"
 DEFAULT_ITERATIONS = 120000
 # lockbox.js refuses a blob claiming more than this rather than hanging on it,

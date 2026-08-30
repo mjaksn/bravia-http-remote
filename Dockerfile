@@ -53,7 +53,8 @@ WORKDIR /app
 # A sealed config is mounted at run time and never copied in. Baking one into a
 # published image would hand the sealed blob to anyone who can pull it, and
 # registry layers outlive the file, so it could not be taken back. seal.py
-# refuses to write into a directory containing a Dockerfile for this reason.
+# refuses to write anywhere under a directory containing a Dockerfile for this
+# reason.
 COPY index.html app.js style.css lockbox.js deploy-config.js pack.html proxy.py ./
 COPY content ./content
 

@@ -146,9 +146,10 @@ docker run -d --name bravia-console --restart unless-stopped \
     ghcr.io/mjaksn/bravia-http-remote:latest
 ```
 
-Then open <http://this-machine:8585>. `docker-compose.yml` is the same thing as
-a Compose file. `BRAVIA_TV` has no default: a proxy pointed at nothing starts
-happily and fails on every request, so the container refuses to start without it.
+Then open <http://this-machine:8585>. `docker-compose.yml` is that same run,
+expressed as a Compose file. `BRAVIA_TV` has no default: a proxy pointed at
+nothing starts happily and fails on every request, so the container refuses to
+start without it.
 
 Published on every interface, as above, anyone on your network who loads the
 page can drive the display. That is the case
@@ -165,9 +166,9 @@ docker run ... -v ~/deploy-config.js:/app/deploy-config.js:ro ...
 The image ships the placeholder. Baking a sealed one into a published image
 hands the blob to anyone who can pull it, and registry layers outlive any
 attempt to take it back, which turns "someone on my network could attack this
-offline" into "anyone could, forever". `seal.py` refuses to write into a
-directory holding a `Dockerfile` for the same reason, and both CI and the
-release workflow check that the image is carrying the placeholder.
+offline" into "anyone could, forever". `seal.py` refuses to write anywhere
+under a directory holding a `Dockerfile` for the same reason, and both CI and
+the release workflow check that the image is carrying the placeholder.
 
 ## Installing it
 
@@ -178,9 +179,10 @@ container, and offers to seal a locked config on the way:
 sudo scripts/install.sh
 ```
 
-It asks which, then asks for the display's address, the pre-shared key and the
-port. Every answer can be given as a flag instead, and `--non-interactive`
-refuses to guess rather than hanging on a prompt:
+It asks which, then asks for the display's address and the port, and for the
+pre-shared key only when it is sealing a locked config. Every answer can be
+given as a flag instead, and `--non-interactive` refuses to guess rather than
+hanging on a prompt:
 
 ```bash
 sudo scripts/install.sh --docker --tv 192.168.1.50 --port 8585 \
@@ -227,6 +229,12 @@ python seal.py --host 192.168.1.50 --psk-file ./psk --out ~/deploy-config.js
 `--psk-file` rather than `--psk`, because an argument is visible in `ps` to
 every user on the machine. `--psk` exists for a quick run at your own keyboard
 and is the wrong thing in a script.
+
+`--interval` sets the starting refresh interval in seconds, the same field
+`pack.html` asks for, and defaults to 5. `--iterations` sets the PBKDF2 rounds
+and defaults to 120,000; going below that default warns, and going above two
+million is refused, because the console will not open a file claiming more
+rounds than that.
 
 It asks for the password twice without echoing it, seals the details, opens the
 result again to prove the file works, and writes the file.
