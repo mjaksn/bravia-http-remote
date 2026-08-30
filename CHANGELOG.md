@@ -8,7 +8,7 @@ The release workflow lifts the section matching a pushed tag out of this file an
 publishes it as the release notes, so a version with no section here does not get a
 release page.
 
-## [1.3.0] - 2026-08-29
+## [1.3.0] - 2026-08-30
 
 ### Added
 
@@ -43,8 +43,8 @@ release page.
   measure, in either form: a card left out is one the display would still obey
   if it were asked another way.
 
-  The picture, sound and speaker cards each cost an RPC per refresh, and one
-  left out now costs none.
+  The picture, sound and speaker cards each cost a request when the console
+  connects, wakes, or is refreshed by hand, and one left out now costs none.
 
   `tests/lint.js` gained three checks with it: the card list in `index.html`,
   `pack.html` and `seal.py` has to agree, since a copy that falls behind would
@@ -66,6 +66,16 @@ release page.
   was rather than taking a wall panel's card list with it.
   `tests/install.test.js` holds both to that, driving the script's own
   functions, since the script end to end wants root and a real machine.
+
+### Fixed
+
+- **A systemd install narrowed with `--bind` now prints the address it answers
+  on.** The closing banner took the machine's first LAN address from
+  `hostname -I` whatever the service had been told to bind to, so an install
+  deliberately narrowed to `127.0.0.1` finished by naming a URL that would
+  never answer. Docker installs are unaffected, since the container binds every
+  interface inside its own namespace and what is exposed is decided by the
+  published port.
 
 ## [1.2.0] - 2026-08-29
 
