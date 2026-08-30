@@ -29,6 +29,7 @@ const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
                'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js', 'tests/lockbox.test.js',
                'tests/browser/harness.js', 'tests/browser/sealed.html',
                'tests/browser/unsealed.html', 'tests/browser/authfail.html',
+               'tests/browser/cards.html',
                'seal.py', 'scripts/install.sh', 'Dockerfile', '.dockerignore',
                'docker-compose.yml'];
 
@@ -68,19 +69,31 @@ if (!read('CHANGELOG.md').includes('## [' + pkgVersion + ']')) {
 
 /* ── no real deployment config in the repository ───────────────────── */
 
-if (!/window\.BRAVIA_DEPLOY_CONFIG = null;/.test(read('deploy-config.js'))) {
+const placeholder = read('deploy-config.js');
+if (!/window\.BRAVIA_DEPLOY_CONFIG = null;/.test(placeholder)) {
   note('deploy-config.js is not the placeholder: a sealed deployment config ' +
        'must not be committed, since it pins every clone to one display');
+}
+/* The other half of the same file, and the same reasoning one size down: a
+   card list committed here is one every clone leaves out, and the person it
+   surprises has no reason to look in this file for the card that went
+   missing. */
+if (!/window\.BRAVIA_HIDDEN_CARDS = \[\];/.test(placeholder)) {
+  note('deploy-config.js does not carry an empty BRAVIA_HIDDEN_CARDS: the ' +
+       'committed file must leave every card in, since a list here pins ' +
+       'every clone to one layout');
 }
 
 /* ── the list of cards agrees in three places ──────────────────────── */
 
 /* index.html owns the cards. A sealed config may name some of them as ones
-   the console must never draw, and the two files that write such a config
+   the console must never draw, and the two files that seal such a config
    both carry their own copy of the list: pack.html offers them in its
    dropdown, seal.py accepts them after --hide. Neither can read index.html
    at the moment it needs them, one being opened from disk and the other
-   having no browser at all.
+   having no browser at all. scripts/install.sh asks about the same cards
+   and is not checked here, because it reads them out of index.html rather
+   than keeping a copy.
 
    A copy that has fallen behind fails quietly rather than loudly. The
    console passes over a name matching no card, on purpose, so a renamed

@@ -70,10 +70,12 @@ MAC_LEN = 16
 
 # The console's cards, in the order index.html lays them out, named the way
 # a sealed config names them: the part of an element id after "card-". A card
-# listed in --hide is one the deployed console never draws. Only this file and
-# pack.html can put a name into a config, and tests/lint.js checks that all
-# three lists still agree, because a name matching no card is passed over in
-# silence by the browser rather than refused.
+# listed in --hide is one the deployed console never draws. This file and
+# pack.html are the two that seal such a name into a config, and tests/lint.js
+# checks that both lists still agree with index.html, because a name matching
+# no card is passed over in silence by the browser rather than refused.
+# scripts/install.sh asks the same question and reads the cards out of
+# index.html rather than keeping a third copy.
 CARDS = (
     ("power", "Power"),
     ("playing", "On (what is playing)"),

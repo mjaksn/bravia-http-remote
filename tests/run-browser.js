@@ -61,6 +61,16 @@ const SUITES = [
     deployConfig: null,      // the placeholder the repo ships
   },
   {
+    // The other half of the same feature: a deploy-config.js that seals
+    // nothing and names cards, which is what install.sh writes when it is
+    // not asked to lock anything.
+    name: 'cards',
+    page: 'cards.html',
+    deployConfig: '/* generated for a test run */\n' +
+      'window.BRAVIA_DEPLOY_CONFIG = null;\n' +
+      "window.BRAVIA_HIDDEN_CARDS = ['apps', 'picture', 'not-a-card'];\n",
+  },
+  {
     name: 'authfail',
     page: 'authfail.html',
     deployConfig: sealed({ host: '', psk: 'same-origin-key', interval: 5 }),

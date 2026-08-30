@@ -1245,21 +1245,31 @@ function renderSystem(info) {
 
 /* ── cards a deployment leaves out ─────────────────────────────────── */
 
-/* A sealed config may carry `hiddenCards`: an array of card names, each
-   one the part of an element id that follows "card-", so "apps" for
-   #card-apps. Every card named is taken out of the document as the config
-   opens, before a single request has been made or a single card drawn, so
-   nothing is being concealed from view; the card is simply never there.
+/* deploy-config.js names the cards this copy of the console must never
+   draw, each one the part of an element id that follows "card-", so
+   "apps" for #card-apps. There are two ways in, and a deployment may use
+   either or both:
 
-   Only a sealed config decides this. Nothing in the console offers it, on
-   purpose: the point is a deployment that shows the handful of things a
-   room needs and none of the rest, and a control for putting them back
-   would undo it. Repack, or reseal, to change the list.
+     window.BRAVIA_HIDDEN_CARDS = ['apps'];   in plain sight, read at boot
+     hiddenCards inside a sealed config,      read as the password opens it
 
-   Held to the same rule as everything else that travels inside the blob:
-   a name matching no card, or matching something that is not one of this
-   page's cards, is passed over rather than refused. A config that opens
-   is a config the console runs.
+   Both are the same instruction and both end here, so nothing has to
+   decide which wins. The plaintext one is a list anybody with the file
+   can read and edit, which is the honest description of it: this is a
+   deployment saying what its console is for, not a lock. The sealed one
+   cannot be edited without the password, and is still not a lock, because
+   a card left out is one the display would obey if it were asked another
+   way.
+
+   Nothing in the console offers the list and nothing in it puts a card
+   back, on purpose: the point is a copy that shows the handful of things
+   a room needs and none of the rest, and a control for undoing that would
+   undo the point. Edit the file, or repack, to change it.
+
+   Held to the same rule as everything else a config carries: a name
+   matching no card, or matching something that is not one of this page's
+   cards, is passed over rather than refused. A config that loads is a
+   config the console runs.
 
    Removing the nodes rather than hiding them is what makes the rest of
    this file quiet about the feature: every renderer already looks its
@@ -1481,8 +1491,9 @@ async function attemptUnlock() {
 
 /* What an opened lockbox means, wherever the password came from. */
 function applyUnlockedSecret(secret) {
-  // Before connect(), so a card this deployment leaves out is gone from
-  // the document before anything can fetch for it or paint into it.
+  // Before connect(), so a card this config leaves out is gone from the
+  // document before anything can fetch for it or paint into it. The
+  // plaintext list, if there is one, went at boot.
   removeHiddenCards(secret.hiddenCards);
   setPsk(secret.psk || '');
   // A locally chosen interval outranks the packaged one: it is the one
@@ -1601,6 +1612,12 @@ async function main() {
   sealedCfg = (typeof window.BRAVIA_DEPLOY_CONFIG === 'object' && window.BRAVIA_DEPLOY_CONFIG)
     ? window.BRAVIA_DEPLOY_CONFIG : null;
   locked = deployed();
+
+  // The plaintext half of the same instruction, and the earliest either
+  // half can be read: before a listener is bound, before a card is
+  // collapsed, before anything at all is drawn. A sealed config's own
+  // list is applied later, as the password opens it.
+  removeHiddenCards(window.BRAVIA_HIDDEN_CARDS);
   if (locked) $('empty-state').hidden = true;
 
   initSettingsDialog();
@@ -1609,10 +1626,12 @@ async function main() {
   $('btn-settings').onclick = () => openSettings();
   $('btn-settings-empty').onclick = () => openSettings();
   $('btn-refresh').onclick = () => { pollOnce(true); refreshSettingsCards(); };
-  $('app-filter').addEventListener('input', renderApps);
-  $('btn-terminate').onclick = () =>
-    guard(rpc('appControl', 'terminateApps', []), 'Asked TV to close background apps');
-  $('text-form').addEventListener('submit', (e) => {
+  // Optional, all three: each of these lives inside a card, and a card the
+  // deployment left out has taken its controls with it.
+  $('app-filter')?.addEventListener('input', renderApps);
+  $('btn-terminate')?.addEventListener('click', () =>
+    guard(rpc('appControl', 'terminateApps', []), 'Asked TV to close background apps'));
+  $('text-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = $('text-input').value;
     guard(rpc('appControl', 'setTextForm', [text], '1.0'), 'Text sent');

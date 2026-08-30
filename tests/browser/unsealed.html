@@ -27,6 +27,13 @@ run(async () => {
      localStorage.getItem('bravia-console-remember') === null,
      a.read('JSON.stringify({...localStorage})'));
   ok('no stay-signed-in note outside a deployed build', a.$('deploy-remembered-note').hidden);
+  // This suite is served the placeholder the repository ships, whose card
+  // list is empty. A committed list would silently take a card away from
+  // every clone, so the shipped file is checked here as well as in the lint.
+  ok('the shipped config leaves every card in',
+     a.read('JSON.stringify(window.BRAVIA_HIDDEN_CARDS)') === '[]' &&
+     a.read('document.querySelectorAll("#cards .card").length') === 11,
+     a.read('JSON.stringify(window.BRAVIA_HIDDEN_CARDS)'));
   ok('no session note outside a deployed build', a.$('deploy-session-note').hidden);
   ok('an unsealed build opens settings, not a lock',
      a.$('settings-dialog').open && !a.$('unlock-dialog').open);

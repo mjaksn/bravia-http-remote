@@ -105,9 +105,11 @@
     </select>
     <p class="hint">Optional, and nothing is left out unless something is picked here.
       A card chosen here is never drawn by the deployed console: it is not fetched for,
-      not shown, and not offered anywhere in the app, because this file is the only
+      not shown, and not offered anywhere in the app, since the config file is the only
       place the choice is made. Ctrl-click, or Cmd-click on a Mac, to pick several or
-      to unpick one. Reseal to change the list later.</p>
+      to unpick one. Reseal to change the list later. A copy that is not locked can
+      carry the same list in plain sight instead; see the comment in the
+      <span class="mono">deploy-config.js</span> the repository ships.</p>
 
     <label for="pk-password">Password</label>
     <input type="password" id="pk-password" autocomplete="new-password" spellcheck="false">

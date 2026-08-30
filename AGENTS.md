@@ -13,11 +13,11 @@ not accidents.
 | `lockbox.js` | Self-contained SHA-256 / HMAC / PBKDF2 used to seal a deployment config. |
 | `pack.html` | Standalone page that writes `deploy-config.js`. |
 | `seal.py` | The same file from a shell, for an installer or a machine with no display. |
-| `deploy-config.js` | Placeholder in the repository. A real one is produced per deployment. |
+| `deploy-config.js` | Placeholder in the repository. A real one is produced per deployment. Also where a deployment names cards the console must never draw. |
 | `proxy.py` | Optional same-origin proxy, for displays that will not answer a CORS preflight. |
 | `tests/` | Node unit tests and browser suites. No test framework. |
 | `scripts/build.js` | Builds the release archive, zip writer included. One file list, used by both workflows. |
-| `scripts/install.sh` | Installs the console as a systemd service or a Docker container, sealing a config on the way if asked. |
+| `scripts/install.sh` | Installs the console as a systemd service or a Docker container, sealing a config on the way if asked, and asking which cards to leave out. |
 
 ## Rules that the tooling enforces
 
@@ -30,10 +30,15 @@ worth knowing before rather than after:
 - **`deploy-config.js` stays the placeholder.** Committing a sealed one would pin every
   clone to one display and put a real pre-shared key in the history.
 - **The list of cards agrees in three places**: the `id="card-x"` sections in
-  `index.html`, the dropdown in `pack.html` and `CARDS` in `seal.py`. A sealed
-  config may name cards the console must never draw, and the two files that write
-  such a config each carry their own copy of the names. A copy that falls behind
-  fails silently, because the console passes over a name matching no card.
+  `index.html`, the dropdown in `pack.html` and `CARDS` in `seal.py`. A config may
+  name cards the console must never draw, and the two files that seal such a config
+  each carry their own copy of the names. A copy that falls behind fails silently,
+  because the console passes over a name matching no card. `scripts/install.sh`
+  asks the same question and is not in the check, because it reads the cards out
+  of `index.html` instead of keeping a fourth copy.
+- **`deploy-config.js` keeps an empty `BRAVIA_HIDDEN_CARDS`.** The same reasoning
+  as the placeholder itself, one size down: a card list committed here is one every
+  clone leaves out.
 - **No em dashes and no double hyphens used as punctuation.** Long command line options,
   CSS custom properties and HTML comments are unaffected.
 - **Every script parses.**

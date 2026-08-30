@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>suite: cards left out, unsealed</title></head>
+<body>
+<pre id="log">running</pre>
+<iframe id="app" style="width:900px;height:600px"></iframe>
+<script src="/harness/harness.js"></script>
+<script>
+/* An ordinary, unlocked console whose deploy-config.js carries nothing but
+   a list of cards to leave out: the file scripts/install.sh writes when it
+   is not asked to seal anything, and the placeholder in the repository with
+   its list filled in. Nothing here is behind a password, so the cards go at
+   boot rather than at an unlock, which is the earliest either half of this
+   feature can act. */
+
+run(async () => {
+  const a = app(document.getElementById('app'));
+
+  localStorage.clear();
+  await a.load('/index.html');
+  await waitFor(() => a.$('cards'), 'the console');
+  watchErrors(a);
+
+  /* ── it is not a locked build ─────────────────────────────────────── */
+  ok('no sealed config', a.read('sealedCfg') === null);
+  ok('not locked', a.read('locked') === false);
+  await waitFor(() => a.$('settings-dialog').open, 'the settings dialog');
+  ok('asks for the connection details as usual', !a.$('settings-connection').hidden);
+
+  /* ── the cards it was told to leave out ───────────────────────────── */
+  ok('a named card is gone from the document', a.$('card-apps') === null);
+  ok('and the second one', a.$('card-picture') === null);
+  ok('a name matching no card changes nothing',
+     !!a.$('card-power') && !!a.$('card-keys') && !!a.$('card-system'));
+  ok('the rest of the cards are all still there',
+     a.read('document.querySelectorAll("#cards .card").length') === 9,
+     String(a.read('document.querySelectorAll("#cards .card").length')));
+
+  /* ── the controls that went with them ─────────────────────────────── */
+  // The apps card owns the filter box and the "Close all" button, and boot
+  // binds listeners to both. A build that left the card out must still get
+  // through that, which is what "no app error" above is watching for.
+  ok('the controls inside a card that is gone went with it',
+     a.$('app-filter') === null && a.$('btn-terminate') === null);
+  ok('controls in a card that stayed are still bound',
+     !!a.$('text-form') && !!a.$('text-input'));
+
+  /* ── connecting with cards missing ────────────────────────────────── */
+  // Port 1 answers nothing, so this fails fast; the point is that the
+  // renderers and the poll run at all with two cards out of the document.
+  a.$('cfg-host').value = '127.0.0.1:1';
+  a.$('cfg-psk').value = 'a-key';
+  a.fire('settings-form', 'submit');
+  await waitFor(() => a.read('cfg') !== null, 'the connection attempt');
+  a.read('pollOnce(true)');
+  a.read('refreshSettingsCards()');
+  await sleep(400);
+  ok('the console survives a poll with cards missing', a.$('card-apps') === null);
+  ok('and is still the same build', a.read('locked') === false);
+
+  /* ── nothing offers the cards back ────────────────────────────────── */
+  a.$('btn-settings').click();
+  await waitFor(() => a.$('settings-dialog').open, 'settings');
+  ok('the settings dialog says nothing about cards',
+     a.$('settings-form').textContent.toLowerCase().indexOf('card') === -1);
+});
+</script>
+</body>
+</html>

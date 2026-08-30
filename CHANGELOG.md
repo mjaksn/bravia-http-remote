@@ -12,30 +12,44 @@ release page.
 
 ### Added
 
-- **Cards a deployment leaves out.** A sealed `deploy-config.js` can carry
-  `hiddenCards`, an optional list of card names, and the console takes each one
-  named out of the document as the config opens: before it has fetched anything
-  or drawn anything, so the card is never there rather than hidden away. It is
-  how a copy going on a wall panel shows power, inputs and volume and nothing
-  else.
+- **Cards a deployment leaves out.** `deploy-config.js` can now name cards this
+  copy of the console never draws, and each one named is taken out of the
+  document before anything has been fetched or drawn, so the card is never there
+  rather than hidden away. It is how a page going on a wall panel shows power,
+  inputs and volume and nothing else.
 
-  `pack.html` gains a **Cards to leave out** picker, and `seal.py` a `--hide`
-  option that is repeatable and takes a comma-separated list. Both refuse, or
-  simply cannot offer, a name that is not a card; the console itself passes an
-  unknown name over rather than refusing a config it can otherwise open.
+  Three ways to set it, and they all end in the same file:
 
-  Nothing in the app offers the list and nothing in the app can put a card back.
-  That is the point: it belongs to whoever sealed the deployment, and resealing
-  is the only way to change it. A config without the field behaves exactly as it
-  did, and an ordinary copy running against the placeholder has no config file to
-  carry one.
+  - By hand. The placeholder the repository ships now carries an empty
+    `window.BRAVIA_HIDDEN_CARDS = []`, and a name added to it takes effect on
+    the next reload. No password and no tooling involved.
+  - Sealed, for a locked deployment. `pack.html` gains a **Cards to leave out**
+    picker and `seal.py` a `--hide` option, repeatable and comma-separated, and
+    the list travels inside the encrypted payload as `hiddenCards`.
+  - During the install. `scripts/install.sh` lists the cards and asks which to
+    leave out, sealed or not, and `--hide apps,keys` answers it without a
+    prompt. Without a seal it writes a `deploy-config.js` holding the list and
+    nothing else.
 
-  The picture, sound and speaker cards each cost an RPC per refresh, and one left
-  out now costs none.
+  A copy using both ways at once gets both lists. `seal.py` and the installer
+  each refuse a name that is not a card, before anything is written and before
+  either asks for a password; the console itself passes an unknown name over, so
+  a typo edited into a file by hand leaves the card where it was rather than
+  breaking the page.
 
-  `tests/lint.js` gained a check with it: the card list in `index.html`,
+  Nothing in the app offers the list and nothing in the app puts a card back.
+  That is the point: it says what this console is for. It is not a security
+  measure, in either form: a card left out is one the display would still obey
+  if it were asked another way.
+
+  The picture, sound and speaker cards each cost an RPC per refresh, and one
+  left out now costs none.
+
+  `tests/lint.js` gained two checks with it: the card list in `index.html`,
   `pack.html` and `seal.py` has to agree, since a copy that falls behind would
-  fail silently rather than loudly.
+  fail silently rather than loudly, and the committed `deploy-config.js` has to
+  carry an empty list, since one committed here would take a card away from
+  every clone.
 
 ## [1.2.0] - 2026-08-29
 

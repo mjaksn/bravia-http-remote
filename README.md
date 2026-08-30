@@ -39,10 +39,12 @@ is visible at once, and every supported action is one click away.
 - **Locked deployments**: ship the app with the address and key already in it,
   sealed under a password, so that a browser that has never been given the
   password cannot read either one. A browser can be told to stay signed in,
-  which saves the password there and skips the prompt on later visits. A
-  deployment can also settle which cards its copy shows, leaving out anything
-  the room it is going in has no use for. See
+  which saves the password there and skips the prompt on later visits. See
   [Deploying a locked copy](#deploying-a-locked-copy).
+- **Cards a deployment leaves out**: `deploy-config.js` can name cards this copy
+  of the console never draws, so a page going on a wall panel shows what that
+  room needs and nothing else. Locked or not, and nothing in the app puts one
+  back. See [Leaving cards out](#leaving-cards-out).
 
 State is polled on a configurable interval; the settings dialog (first launch, or
 the ⚙ button) asks for hostname/IP, pre-shared key, and refresh interval. A copy
@@ -180,13 +182,16 @@ container, and offers to seal a locked config on the way:
 sudo scripts/install.sh
 ```
 
-It asks which, then asks for the display's address, the pre-shared key and the
-port. Every answer can be given as a flag instead, and `--non-interactive`
-refuses to guess rather than hanging on a prompt:
+It asks which, then asks for the display's address, the pre-shared key, the
+port, and which cards this copy should leave out, listing them to pick from; see
+[Leaving cards out](#leaving-cards-out). Every answer can be given as a flag
+instead, and `--non-interactive` refuses to guess rather than hanging on a
+prompt:
 
 ```bash
 sudo scripts/install.sh --docker --tv 192.168.1.50 --port 8585 \
-    --lock --psk-file ./psk --password-file ./pw --non-interactive
+    --lock --psk-file ./psk --password-file ./pw --hide apps,keys \
+    --non-interactive
 ```
 
 Neither the pre-shared key nor the deployment password is ever taken as an
@@ -258,35 +263,8 @@ both halves wrong together.
 
 To go back to the ordinary behavior, delete `deploy-config.js` or set
 `window.BRAVIA_DEPLOY_CONFIG` back to `null`. To change the address, the key, the
-cards or the password, repack: there is nothing to edit by hand, and a forgotten
-password cannot be recovered.
-
-### Leaving cards out
-
-A sealed config can name cards the console must never draw, which is how a copy
-going on a wall panel shows power, inputs and volume and nothing else. It is a
-property of a sealed deployment and of nothing else: an ordinary copy, running
-against the placeholder `deploy-config.js` the repo ships, has no config file to
-carry the list. Pick the cards in `pack.html`, or pass `--hide` to `seal.py`:
-
-```bash
-python seal.py --host 192.168.1.50 --psk-file ./psk --hide apps,keys,picture
-```
-
-The names are `power`, `playing`, `volume`, `inputs`, `apps`, `keys`, `text`,
-`picture`, `sound`, `system` and `speaker`, in the order the page lays them out.
-`seal.py` refuses a name that is not one of them, before it asks for a password.
-
-A card named there is gone from the document as the config opens, before the
-console has fetched anything or drawn anything, so the picture, sound and speaker
-cards stop costing a request each as well. Nothing in the app puts one back and
-nothing in the app offers to; reseal is the only way to change the list. It is
-not a security measure either: the list is sealed alongside the address and the
-key and cannot be edited without the password, but a card left out is a card the
-display would still obey if it were asked another way.
-
-Cards the TV itself does not support are hidden regardless, and always were. This
-is for the ones it supports and a deployment has no use for.
+sealed card list or the password, repack: there is nothing in a sealed file to
+edit by hand, and a forgotten password cannot be recovered.
 
 ### What a locked copy does with the details
 
@@ -345,6 +323,53 @@ It is not a security boundary beyond that, and it is not trying to be:
 The crypto lives in `lockbox.js` and is deliberately self-contained rather than
 using WebCrypto: `crypto.subtle` exists only in a secure context, and this app is
 served over plain `http://` on a LAN, exactly where it would be missing.
+
+## Leaving cards out
+
+`deploy-config.js` can name cards the console must never draw, which is how a
+copy going on a wall panel shows power, inputs and volume and nothing else. It
+works locked or not, and there are three ways to set it:
+
+**In the file itself**, which needs no tooling and no password. The
+`deploy-config.js` the repo ships carries an empty list, and a name added to it
+takes effect on the next reload:
+
+```js
+window.BRAVIA_DEPLOY_CONFIG = null;
+window.BRAVIA_HIDDEN_CARDS = ['apps', 'keys'];
+```
+
+**Sealed**, for a locked deployment. Pick the cards in `pack.html`, or pass
+`--hide` to `seal.py`, and they travel inside the encrypted payload with the
+address and the key:
+
+```bash
+python seal.py --host 192.168.1.50 --psk-file ./psk --hide apps,keys,picture
+```
+
+**During the install.** `scripts/install.sh` lists the cards and asks which to
+leave out, sealed or not, and `--hide apps,keys` answers it without a prompt.
+
+The names are `power`, `playing`, `volume`, `inputs`, `apps`, `keys`, `text`,
+`picture`, `sound`, `system` and `speaker`, in the order the page lays them out.
+`seal.py` and the installer both refuse a name that is not one of them, before
+anything is written and before either asks for a password. The console itself
+passes an unknown name over, so a typo hand-edited into the file shows up as a
+card that is still there rather than as a page that will not load. A copy that
+uses both ways at once gets both lists; neither overrules the other.
+
+A card named there is gone from the document before the console has fetched
+anything or drawn anything: at boot for the plaintext list, and as the password
+opens the config for a sealed one. The picture, sound and speaker cards stop
+costing a request each as well. Nothing in the app puts one back and nothing in
+the app offers to; editing the file, or repacking, is the only way to change the
+list. It is not a security measure either. The plaintext list is there for anyone
+with the file to read and edit, and even the sealed one, which nobody can edit
+without the password, only decides what this console draws: a card left out is a
+card the display would still obey if it were asked another way.
+
+Cards the TV itself does not support are hidden regardless, and always were. This
+is for the ones it supports and a deployment has no use for.
 
 ## Notes
 
