@@ -242,6 +242,32 @@ check_hide() {
     done
 }
 
+# The cards an earlier unsealed run left out, comma-separated, and empty
+# when there is no such file. A sealed config is never read here: it is
+# encrypted, and a run that finds one keeps it whole rather than reaching
+# inside it.
+saved_cards() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    sed -n "s/.*BRAVIA_HIDDEN_CARDS = \[\(.*\)\];.*/\1/p" "$CONFIG_FILE" | tr -d "' "
+}
+
+# A seal writes the file the cards live in from scratch, so a run that was
+# neither asked nor told has to carry the last answer into the new one by
+# hand. The unsealed path keeps its own file and needs nothing. Without
+# this a --non-interactive --lock re-run would put every card back
+# silently, which is the one thing the header of this script promises it
+# will not do.
+#
+# Sets HIDE rather than printing it, for the same reason choose_cards does:
+# a $(...) would put a die() from check_hide in a subshell and carry on.
+carry_over_cards() {
+    [ "$ASKED" -eq 0 ] || return 0
+    HIDE="$(saved_cards)"
+    [ -n "$HIDE" ] || return 0
+    check_hide "$HIDE"
+    say "carrying over the cards an earlier run left out: $HIDE"
+}
+
 # Sets HIDE rather than printing it, so that a bad answer can end the script
 # through die(): a $(...) here would put die in a subshell and carry on.
 choose_cards() {
@@ -254,9 +280,7 @@ choose_cards() {
     # What an earlier run settled, if anything. The answer given here replaces
     # it whole, blank included, so it has to be on screen before it is asked
     # for.
-    if [ -f "$CONFIG_FILE" ]; then
-        current="$(sed -n "s/.*BRAVIA_HIDDEN_CARDS = \[\(.*\)\];.*/\1/p" "$CONFIG_FILE" | tr -d "' ")"
-    fi
+    current="$(saved_cards)"
     if [ -n "$current" ]; then
         echo
         echo "  An earlier run left out: $current. What you answer here replaces"
@@ -321,6 +345,32 @@ find_python() {
         fi
     done
     return 1
+}
+
+# Seal to a new file beside the target and put it in place only once that
+# has worked. Two things need this. seal.py refuses to overwrite, and an
+# unsealed card list may be sitting at the target already; and a run can
+# still fail after it starts, on a missing key file, an interval that is
+# not a number, or a password typed differently twice. Writing straight to
+# the target would mean a failed run had already taken away whatever was
+# there, which for a wall panel is its whole card selection.
+#
+# The rename is within one directory, so it replaces the old file whole or
+# not at all.
+seal_to() {
+    local target="$1"
+    shift
+    local tmp="$target.new"
+
+    rm -f "$tmp"
+    # In an if, so that a failure is handled here rather than ending the
+    # script through set -e with the half-written file still beside it.
+    if ! "$PYTHON" "$SOURCE_DIR/seal.py" --out "$tmp" "$@" >/dev/null; then
+        rm -f "$tmp"
+        die "sealing failed, and $target is as it was"
+    fi
+    mv "$tmp" "$target"
+    chmod 0644 "$target"
 }
 
 echo
@@ -455,12 +505,16 @@ if [ "$KEEPING" -eq 1 ]; then
 elif [ "$LOCK" -eq 1 ]; then
     find_python || die "python3 is needed to seal a config, and was not found"
 
-    # An unsealed run leaves a plain card list at this path, and seal.py
-    # refuses to overwrite any file that is already there. That one is this
-    # script's own work and holds no address, no key and nothing that is not
-    # about to be asked for again, so it goes rather than stopping the seal.
+    # An unsealed run leaves a plain card list at this path, and the sealed
+    # file carries the same choice inside it, so that one is replaced. The
+    # choice itself is carried over first: this run may never have been
+    # asked, and putting every card back unasked is the one thing the header
+    # of this script promises will not happen.
+    #
+    # Nothing is taken away here. seal_to() replaces the file only once the
+    # seal has worked, so a run that fails leaves the old one where it was.
+    carry_over_cards
     if [ -f "$CONFIG_FILE" ]; then
-        rm -f "$CONFIG_FILE"
         say "replacing the card list an earlier run left at $CONFIG_FILE"
     fi
 
@@ -509,15 +563,15 @@ elif [ "$LOCK" -eq 1 ]; then
     if [ -n "$HIDE" ]; then HIDE_ARG="--hide $HIDE"; fi
 
     if [ -n "$PASSWORD_FILE" ]; then
-        "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
-            --interval "$INTERVAL" $HIDE_ARG --out "$CONFIG_FILE" \
-            --password-file "$PASSWORD_FILE" >/dev/null
+        seal_to "$CONFIG_FILE" --host "$TV" --psk-file "$psk_tmp" \
+            --interval "$INTERVAL" $HIDE_ARG \
+            --password-file "$PASSWORD_FILE"
     elif [ "$INTERACTIVE" -eq 0 ] || [ ! -t 0 ]; then
         die "sealing needs a password: use --password-file, or drop --lock"
     else
         echo
-        "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
-            --interval "$INTERVAL" $HIDE_ARG --out "$CONFIG_FILE" >/dev/null
+        seal_to "$CONFIG_FILE" --host "$TV" --psk-file "$psk_tmp" \
+            --interval "$INTERVAL" $HIDE_ARG
     fi
 
     if [ "$psk_tmp_ours" -eq 1 ]; then
@@ -525,7 +579,6 @@ elif [ "$LOCK" -eq 1 ]; then
         trap - EXIT INT TERM
     fi
 
-    chmod 0644 "$CONFIG_FILE"
     say "sealed the connection details into $CONFIG_FILE"
     if [ -n "$HIDE" ]; then say "and the cards to leave out: $HIDE"; fi
     SEALED=1
