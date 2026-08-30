@@ -24,9 +24,9 @@ not accidents.
 `node tests/lint.js` runs on every pull request and fails on any of these, so they are
 worth knowing before rather than after:
 
-- **The version lives in two places and must agree**: `version` in `package.json` and
-  `APP_VERSION` in `app.js`. A release additionally requires the tag to match both, and
-  `CHANGELOG.md` to have a `## [x.y.z]` section for it.
+- **The version lives in three places and must agree**: `version` in `package.json`,
+  `APP_VERSION` in `app.js`, and a `## [x.y.z]` section in `CHANGELOG.md` for that same
+  number. A release additionally requires the tag to match the first two.
 - **`deploy-config.js` stays the placeholder.** Committing a sealed one would pin every
   clone to one display and put a real pre-shared key in the history.
 - **No em dashes and no double hyphens used as punctuation.** Long command line options,
@@ -77,9 +77,11 @@ other open, in both directions, on every CI run and on both operating systems.
 If you touch the format in one, the test is what tells you about the other.
 
 Not every shared constant fails the same way, and the difference matters when
-you change one. `MAGIC` and `MAC_LEN` are compared directly by `lockbox.js`, so
-a disagreement there is refused outright. The salt length, the nonce length and
-the iteration count travel inside the blob and are read back from it, so the
+you change one. `MAC_LEN` is compared directly by `lockbox.js`, so a file whose
+tag is the wrong length is refused as corrupt. `MAGIC` is never compared at
+all: it is signed into the tag, so a disagreement there surfaces as a failed
+tag check and reads as access denied. The salt length, the nonce length and the
+iteration count travel inside the blob and are read back from it, so the
 console opens those whatever they are.
 
 `MAX_ITERATIONS` is the one that bites. `lockbox.js` refuses a blob claiming
