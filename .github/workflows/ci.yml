@@ -102,7 +102,9 @@ jobs:
         # No display is involved. /__proxy reports which one it is pointed at
         # without talking to it, and the app itself is static files.
         run: |
-          docker run --detach --name probe             --env BRAVIA_TV=192.0.2.10             --publish 127.0.0.1:8585:8585 bravia:ci
+          docker run --detach --name probe \
+            --env BRAVIA_TV=192.0.2.10 \
+            --publish 127.0.0.1:8585:8585 bravia:ci
           for attempt in $(seq 1 30); do
             if curl --silent --fail http://127.0.0.1:8585/__proxy > proxy.json; then
               break
@@ -140,9 +142,6 @@ jobs:
             exit 1
           }
 
-  # The single check branch protection requires. Naming the matrix jobs
-  # directly would mean listing every combination, and renaming one would
-  # quietly stop protecting anything.
   rehearsal:
     name: the publishing path still works
     # The image jobs in release.yml are a `uses:` apiece now, and what they
@@ -158,6 +157,9 @@ jobs:
       platforms: linux/amd64
       push: false
 
+  # The single check branch protection requires. Naming the matrix jobs
+  # directly would mean listing every combination, and renaming one would
+  # quietly stop protecting anything.
   gate:
     if: always() # so an upstream failure cannot leave this skipped, and satisfied by default
     needs: [lint, test, build, docker, rehearsal]
@@ -169,7 +171,7 @@ jobs:
           echo "test:  ${{ needs.test.result }}"
           echo "build: ${{ needs.build.result }}"
           echo "docker: ${{ needs.docker.result }}"
-          echo "rehearsal ${{ needs.rehearsal.result }}"
+          echo "rehearsal: ${{ needs.rehearsal.result }}"
           [ "${{ needs.lint.result }}"  = "success" ] || exit 1
           [ "${{ needs.test.result }}"  = "success" ] || exit 1
           [ "${{ needs.build.result }}" = "success" ] || exit 1
