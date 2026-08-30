@@ -9,7 +9,7 @@
 /* Kept equal to `version` in package.json, and to the tag a release is cut
    from. tests/lint.js fails a pull request where the two disagree, and the
    release workflow refuses a tag that disagrees with either. */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 const LS_KEY = 'bravia-console-config';
 const LS_INTERVAL_KEY = 'bravia-console-interval';
@@ -508,7 +508,9 @@ function applyStandbyMask() {
   const standby = powerState !== 'active';
   for (const id of ['card-playing', 'card-volume', 'card-inputs', 'card-apps',
                     'card-keys', 'card-text', 'card-picture', 'card-sound', 'card-speaker']) {
-    $(id).classList.toggle('disabled-standby', standby);
+    // A deployment may have taken any of these out of the document; see
+    // removeHiddenCards.
+    $(id)?.classList.toggle('disabled-standby', standby);
   }
 }
 
@@ -546,6 +548,7 @@ function guard(promise, okMsg) {
 
 function renderPower() {
   const card = $('card-power');
+  if (!card) return;               // hidden by the deployment config
   card.hidden = false;
   $('power-sub').textContent = 'system.getPowerStatus';
 
@@ -637,6 +640,10 @@ const LED_MODES = ['Demo', 'AutoBrightnessAdjust', 'Dark', 'SimpleResponse', 'Of
    after an edit), never per poll tick. */
 async function loadPowerExtras() {
   const my = epoch;
+  // Asked before the requests rather than after them: a power card the
+  // deployment left out should cost nothing, not two RPCs whose answers
+  // have nowhere to go.
+  if (!$('card-power')) return;
   const rows = [];
   if (supports('system', 'getPowerSavingMode') && supports('system', 'setPowerSavingMode')) {
     try {
@@ -677,6 +684,7 @@ function renderPlaying(info) {
   currentUri = info && info.uri ? info.uri : null;
   highlightActiveInput();
   const card = $('card-playing');
+  if (!card) return;               // hidden by the deployment config
   if (!supports('avContent', 'getPlayingContentInfo')) { card.hidden = true; return; }
   card.hidden = false;
   const body = $('playing-body');
@@ -737,6 +745,7 @@ function renderPlaying(info) {
 
 function renderVolume(targets) {
   const card = $('card-volume');
+  if (!card) return;               // hidden by the deployment config
   if (!supports('audio', 'getVolumeInformation') || !targets) {
     if (!supports('audio', 'getVolumeInformation')) card.hidden = true;
     return;
@@ -837,6 +846,7 @@ function highlightActiveInput() {
 
 function renderInputs(inputs) {
   const card = $('card-inputs');
+  if (!card) return;               // hidden by the deployment config
   if (!supports('avContent', 'getCurrentExternalInputsStatus')) { card.hidden = true; return; }
   if (!inputs) return;
   card.hidden = false;
@@ -939,6 +949,7 @@ function paintInputs(body, inputs) {
 
 function renderApps() {
   const card = $('card-apps');
+  if (!card) return;               // hidden by the deployment config
   const canLaunch = supports('appControl', 'setActiveApp');
   if (!apps.length || !supports('appControl', 'getApplicationList')) { card.hidden = true; return; }
   card.hidden = false;
@@ -1000,6 +1011,7 @@ const KEY_LABELS = {
 
 function renderKeys() {
   const card = $('card-keys');
+  if (!card) return;               // hidden by the deployment config
   if (!irccCodes.length) { card.hidden = true; return; }
   card.hidden = false;
   $('keys-sub').textContent = irccCodes.length + ' codes via IRCC-IP';
@@ -1093,6 +1105,7 @@ function makeKeyGroup(title, names, byName) {
 
 function renderTextCard(statusList) {
   const card = $('card-text');
+  if (!card) return;               // hidden by the deployment config
   if (interacting(card)) return;   // never yank the field mid-typing
   if (!supports('appControl', 'setTextForm') || !statusList) { card.hidden = true; return; }
   const textInput = statusList.find(s => s.name === 'textInput');
@@ -1104,6 +1117,8 @@ function renderTextCard(statusList) {
 async function loadGenericSettings(service, getter, setter, cardId, bodyId) {
   const my = epoch;
   const card = $(cardId);
+  // Before the request, so a card the deployment left out costs no RPC.
+  if (!card) return;               // hidden by the deployment config
   if (!supports(service, getter)) { card.hidden = true; return; }
   let items;
   try {
@@ -1210,6 +1225,7 @@ function paintSettingRows(body, items) {
 
 function renderSystem(info) {
   const card = $('card-system');
+  if (!card) return;               // hidden by the deployment config
   if (!info) { card.hidden = true; return; }
   card.hidden = false;
   const kv = document.createElement('dl');
@@ -1225,6 +1241,39 @@ function renderSystem(info) {
     kv.appendChild(dt); kv.appendChild(dd);
   }
   $('system-body').replaceChildren(kv);
+}
+
+/* ── cards a deployment leaves out ─────────────────────────────────── */
+
+/* A sealed config may carry `hiddenCards`: an array of card names, each
+   one the part of an element id that follows "card-", so "apps" for
+   #card-apps. Every card named is taken out of the document as the config
+   opens, before a single request has been made or a single card drawn, so
+   nothing is being concealed from view; the card is simply never there.
+
+   Only a sealed config decides this. Nothing in the console offers it, on
+   purpose: the point is a deployment that shows the handful of things a
+   room needs and none of the rest, and a control for putting them back
+   would undo it. Repack, or reseal, to change the list.
+
+   Held to the same rule as everything else that travels inside the blob:
+   a name matching no card, or matching something that is not one of this
+   page's cards, is passed over rather than refused. A config that opens
+   is a config the console runs.
+
+   Removing the nodes rather than hiding them is what makes the rest of
+   this file quiet about the feature: every renderer already looks its
+   card up by id, so a card that is gone is one early return, and the
+   picture, sound and speaker cards stop costing an RPC each. The
+   renderers that would otherwise dereference null are guarded, and the
+   comment against each says so. */
+function removeHiddenCards(names) {
+  if (!Array.isArray(names)) return;
+  const cards = $('cards');
+  for (const name of names) {
+    const card = document.getElementById('card-' + String(name).trim());
+    if (card && card.parentElement === cards) card.remove();
+  }
 }
 
 /* ── collapsible cards ─────────────────────────────────────────────── */
@@ -1432,6 +1481,9 @@ async function attemptUnlock() {
 
 /* What an opened lockbox means, wherever the password came from. */
 function applyUnlockedSecret(secret) {
+  // Before connect(), so a card this deployment leaves out is gone from
+  // the document before anything can fetch for it or paint into it.
+  removeHiddenCards(secret.hiddenCards);
   setPsk(secret.psk || '');
   // A locally chosen interval outranks the packaged one: it is the one
   // setting this mode still lets the user own.

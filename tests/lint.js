@@ -4,10 +4,11 @@
  *
  *   node tests/lint.js
  *
- * Four things, each of which has gone wrong somewhere before: a script
+ * Five things, each of which has gone wrong somewhere before: a script
  * that does not parse, whether JavaScript, shell or Python; a version that
  * agrees with itself in only one place; a real deployment config committed
- * by accident; and punctuation this project does not use.
+ * by accident; a list of cards that three files no longer agree on; and
+ * punctuation this project does not use.
  */
 
 const { execSync, spawnSync } = require('child_process');
@@ -70,6 +71,44 @@ if (!read('CHANGELOG.md').includes('## [' + pkgVersion + ']')) {
 if (!/window\.BRAVIA_DEPLOY_CONFIG = null;/.test(read('deploy-config.js'))) {
   note('deploy-config.js is not the placeholder: a sealed deployment config ' +
        'must not be committed, since it pins every clone to one display');
+}
+
+/* ── the list of cards agrees in three places ──────────────────────── */
+
+/* index.html owns the cards. A sealed config may name some of them as ones
+   the console must never draw, and the two files that write such a config
+   both carry their own copy of the list: pack.html offers them in its
+   dropdown, seal.py accepts them after --hide. Neither can read index.html
+   at the moment it needs them, one being opened from disk and the other
+   having no browser at all.
+
+   A copy that has fallen behind fails quietly rather than loudly. The
+   console passes over a name matching no card, on purpose, so a renamed
+   card turns a deployment's choice into a card that comes back, and a card
+   added here and nowhere else is simply one nobody can leave out. */
+
+const cardIds = [...read('index.html')
+  .matchAll(/<section class="card" id="card-([a-z]+)"/g)].map(m => m[1]);
+const packSelect = read('pack.html').match(/id="pk-hidden"[\s\S]*?<\/select>/);
+const packCards = packSelect
+  ? [...packSelect[0].matchAll(/<option value="([a-z]+)"/g)].map(m => m[1]) : null;
+const sealTable = read('seal.py').match(/^CARDS = \(([\s\S]*?)^\)/m);
+const sealCards = sealTable
+  ? [...sealTable[1].matchAll(/\("([a-z]+)",/g)].map(m => m[1]) : null;
+
+if (!cardIds.length) {
+  note('index.html has no cards, so the card lists cannot be checked against it');
+} else {
+  // Order as well as membership: both lists are read by a person choosing
+  // cards, and they should read in the order the page lays them out.
+  for (const [file, list] of [['pack.html', packCards], ['seal.py', sealCards]]) {
+    if (!list) { note(`${file} has no card list where one was expected`); continue; }
+    if (list.join(',') !== cardIds.join(',')) {
+      note(`the card list in ${file} disagrees with index.html:\n` +
+           `  index.html  ${cardIds.join(', ')}\n` +
+           `  ${file.padEnd(10)}  ${list.join(', ')}`);
+    }
+  }
 }
 
 /* ── punctuation ───────────────────────────────────────────────────── */
@@ -150,5 +189,6 @@ if (problems.length) {
 }
 console.log(`lint ok: ${JS.length} scripts parse, version ${pkgVersion} agrees in ` +
             'package.json, app.js and CHANGELOG.md, deploy-config.js is the placeholder, ' +
+            `the ${cardIds.length} cards agree in index.html, pack.html and seal.py, ` +
             `punctuation clean across ${PROSE.length} files, ` +
             `${SHELL.length + PYTHON.length} shell and python files parse`);

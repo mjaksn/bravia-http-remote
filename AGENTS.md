@@ -29,6 +29,11 @@ worth knowing before rather than after:
   `CHANGELOG.md` to have a `## [x.y.z]` section for it.
 - **`deploy-config.js` stays the placeholder.** Committing a sealed one would pin every
   clone to one display and put a real pre-shared key in the history.
+- **The list of cards agrees in three places**: the `id="card-x"` sections in
+  `index.html`, the dropdown in `pack.html` and `CARDS` in `seal.py`. A sealed
+  config may name cards the console must never draw, and the two files that write
+  such a config each carry their own copy of the names. A copy that falls behind
+  fails silently, because the console passes over a name matching no card.
 - **No em dashes and no double hyphens used as punctuation.** Long command line options,
   CSS custom properties and HTML comments are unaffected.
 - **Every script parses.**
@@ -43,6 +48,10 @@ worth knowing before rather than after:
   `crypto.getRandomValues` is fine. This is why `lockbox.js` implements its own hashing.
 - **Keep the two proxies in step.** A change to one belongs in the other, including its
   comments and its usage text.
+- **A card is looked up before it is drawn.** A deployment can name cards the
+  console takes out of the document as its config opens, so every renderer has to
+  survive its card not being there. That is one early return each, marked as such,
+  and it is also where the picture, sound and speaker cards save their RPC.
 - **Prose the program emits is documentation.** Toasts, banner text, dialog copy and
   command line output age the same way a README does, and a claim usually appears in more
   than one place.
@@ -50,7 +59,7 @@ worth knowing before rather than after:
 ## Tests
 
 ```bash
-npm run lint          # parses, versions, placeholder, punctuation
+npm run lint          # parses, versions, placeholder, card lists, punctuation
 npm run test:unit     # lockbox primitives against Node's crypto
 npm run test:seal     # seal.py and lockbox.js open each other's work
 npm run test:browser  # the real pages driven in headless Chrome

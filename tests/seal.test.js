@@ -73,7 +73,13 @@ const PY = python();
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'bravia-seal-'));
 const pwFile = path.join(work, 'password');
 const PASSWORD = 'a password with spaces and a é';
-const SECRET = { host: '192.168.1.50:80', psk: 'p$k-0000', interval: 7 };
+/* hiddenCards rides inside the payload like everything else, so it is
+   sealed and opened here in both directions too: it is the newest field,
+   and the one most likely to be added to one implementation alone. */
+const SECRET = {
+  host: '192.168.1.50:80', psk: 'p$k-0000', interval: 7,
+  hiddenCards: ['apps', 'keys'],
+};
 
 fs.writeFileSync(pwFile, PASSWORD, 'utf8');
 
@@ -86,6 +92,7 @@ try {
                     '--host', SECRET.host,
                     '--psk', SECRET.psk,
                     '--interval', String(SECRET.interval),
+                    '--hide', SECRET.hiddenCards.join(','),
                     '--out', out,
                     '--password-file', pwFile], { stdio: 'pipe' });
 
@@ -104,6 +111,8 @@ try {
   eq('lockbox.js opens it: host', opened.host, SECRET.host);
   eq('lockbox.js opens it: psk', opened.psk, SECRET.psk);
   eq('lockbox.js opens it: interval', opened.interval, SECRET.interval);
+  eq('lockbox.js opens it: hidden cards',
+     JSON.stringify(opened.hiddenCards), JSON.stringify(SECRET.hiddenCards));
 
   let denied = false;
   try { L.open(PASSWORD + 'x', blob); } catch (e) { denied = e.message === 'Access denied'; }
@@ -131,6 +140,29 @@ try {
   eq('seal.py opens what lockbox.js sealed: host', back.host, SECRET.host);
   eq('seal.py opens what lockbox.js sealed: psk', back.psk, SECRET.psk);
   eq('seal.py opens what lockbox.js sealed: interval', back.interval, SECRET.interval);
+  eq('seal.py opens what lockbox.js sealed: hidden cards',
+     JSON.stringify(back.hiddenCards), JSON.stringify(SECRET.hiddenCards));
+
+  /* ── a card name that is not a card ─────────────────────────────────── */
+
+  // The console passes over a name matching no card rather than refusing
+  // the config, so a typo that got as far as a sealed file would be a
+  // deployment quietly showing a card it was told to leave out. seal.py is
+  // where that is caught, and it is caught before the password is asked
+  // for rather than after.
+  let mistyped = '';
+  try {
+    execFileSync(PY, [path.join(ROOT, 'seal.py'),
+                      '--host', SECRET.host, '--psk', SECRET.psk,
+                      '--hide', 'apps,not-a-card',
+                      '--out', path.join(work, 'mistyped.js'),
+                      '--password-file', pwFile], { stdio: 'pipe' });
+  } catch (e) {
+    mistyped = String(e.stderr || '');
+  }
+  ok('seal.py refuses a card name that is not a card',
+     /not a card: not-a-card/.test(mistyped), mistyped.slice(0, 200));
+  ok('and wrote nothing', !fs.existsSync(path.join(work, 'mistyped.js')));
 
   /* ── the ceiling, which only the other implementation enforces ─────── */
 

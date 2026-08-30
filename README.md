@@ -39,7 +39,9 @@ is visible at once, and every supported action is one click away.
 - **Locked deployments**: ship the app with the address and key already in it,
   sealed under a password, so that a browser that has never been given the
   password cannot read either one. A browser can be told to stay signed in,
-  which saves the password there and skips the prompt on later visits. See
+  which saves the password there and skips the prompt on later visits. A
+  deployment can also settle which cards its copy shows, leaving out anything
+  the room it is going in has no use for. See
   [Deploying a locked copy](#deploying-a-locked-copy).
 
 State is polled on a configurable interval; the settings dialog (first launch, or
@@ -209,9 +211,12 @@ keeps and what it costs.
 1. Open `pack.html` (double-click it, same as the app itself).
 2. Fill in the display's address, the pre-shared key, a starting refresh interval,
    and the password you intend to hand out.
-3. Press **Seal**. The page encrypts the lot, opens it again to prove the file
+3. Optionally pick cards under **Cards to leave out**. See
+   [Leaving cards out](#leaving-cards-out); nothing is left out unless something
+   is picked here.
+4. Press **Seal**. The page encrypts the lot, opens it again to prove the file
    works, and offers it for download as `deploy-config.js`.
-4. Put that file next to `index.html`, replacing the placeholder the repo ships,
+5. Put that file next to `index.html`, replacing the placeholder the repo ships,
    and deploy the folder however you were going to.
 
 ### Sealing without a browser
@@ -229,7 +234,9 @@ every user on the machine. `--psk` exists for a quick run at your own keyboard
 and is the wrong thing in a script.
 
 It asks for the password twice without echoing it, seals the details, opens the
-result again to prove the file works, and writes the file.
+result again to prove the file works, and writes the file. `--hide` takes the
+cards to leave out, repeated or comma-separated; see
+[Leaving cards out](#leaving-cards-out).
 
 **Write it outside the checkout**, as above. `seal.py` refuses to write into a
 Docker build context, which means a directory holding a `Dockerfile` and every
@@ -250,9 +257,36 @@ run. A sealer that only checked its own work would pass just as happily with
 both halves wrong together.
 
 To go back to the ordinary behavior, delete `deploy-config.js` or set
-`window.BRAVIA_DEPLOY_CONFIG` back to `null`. To change the address, the key or
-the password, repack: there is nothing to edit by hand, and a forgotten password
-cannot be recovered.
+`window.BRAVIA_DEPLOY_CONFIG` back to `null`. To change the address, the key, the
+cards or the password, repack: there is nothing to edit by hand, and a forgotten
+password cannot be recovered.
+
+### Leaving cards out
+
+A sealed config can name cards the console must never draw, which is how a copy
+going on a wall panel shows power, inputs and volume and nothing else. It is a
+property of a sealed deployment and of nothing else: an ordinary copy, running
+against the placeholder `deploy-config.js` the repo ships, has no config file to
+carry the list. Pick the cards in `pack.html`, or pass `--hide` to `seal.py`:
+
+```bash
+python seal.py --host 192.168.1.50 --psk-file ./psk --hide apps,keys,picture
+```
+
+The names are `power`, `playing`, `volume`, `inputs`, `apps`, `keys`, `text`,
+`picture`, `sound`, `system` and `speaker`, in the order the page lays them out.
+`seal.py` refuses a name that is not one of them, before it asks for a password.
+
+A card named there is gone from the document as the config opens, before the
+console has fetched anything or drawn anything, so the picture, sound and speaker
+cards stop costing a request each as well. Nothing in the app puts one back and
+nothing in the app offers to; reseal is the only way to change the list. It is
+not a security measure either: the list is sealed alongside the address and the
+key and cannot be edited without the password, but a card left out is a card the
+display would still obey if it were asked another way.
+
+Cards the TV itself does not support are hidden regardless, and always were. This
+is for the ones it supports and a deployment has no use for.
 
 ### What a locked copy does with the details
 

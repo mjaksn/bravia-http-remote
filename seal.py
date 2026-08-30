@@ -10,10 +10,15 @@ lockbox.js reads.
 Usage:
     python seal.py --host 192.168.1.50 --psk-file ./psk --out ~/deploy-config.js
     python seal.py --host 192.168.1.50 --psk 0000 --out ~/deploy-config.js
+    python seal.py --host 192.168.1.50 --psk-file ./psk --hide apps,keys
 
 The second form is fine at a keyboard and wrong in a script: an argument is
 visible in `ps` to every user on the machine, and --psk-file exists for that.
 --out belongs outside any checkout holding a Dockerfile; see --force.
+
+--hide names cards the deployed console never draws. It is a property of the
+deployment and of nothing else: nobody at the browser can put one back, and
+resealing is the only way to change the list. See CARDS below for the names.
 
 The password is asked for, twice, with the typing hidden. It is never taken
 as an argument, because an argument is visible in `ps` to every user on the
@@ -63,11 +68,56 @@ SALT_LEN = 16
 NONCE_LEN = 16
 MAC_LEN = 16
 
+# The console's cards, in the order index.html lays them out, named the way
+# a sealed config names them: the part of an element id after "card-". A card
+# listed in --hide is one the deployed console never draws. Only this file and
+# pack.html can put a name into a config, and tests/lint.js checks that all
+# three lists still agree, because a name matching no card is passed over in
+# silence by the browser rather than refused.
+CARDS = (
+    ("power", "Power"),
+    ("playing", "On (what is playing)"),
+    ("volume", "Audio"),
+    ("inputs", "Inputs"),
+    ("apps", "Apps"),
+    ("keys", "Remote Keys"),
+    ("text", "Text Entry"),
+    ("picture", "Picture"),
+    ("sound", "Sound Modes"),
+    ("system", "System"),
+    ("speaker", "Speaker Setup"),
+)
+CARD_NAMES = tuple(name for name, _ in CARDS)
+
+
+def parse_hidden(values) -> list:
+    """Turn every --hide into a list of card names, in the order CARDS has.
+
+    Repeated options and comma-separated lists both work, and both end up
+    the same. A name that is not a card is refused here rather than sealed:
+    the console passes an unknown name over in silence, so a typo would
+    otherwise seal as a deployment that quietly shows a card it was told to
+    leave out.
+    """
+    asked = []
+    for value in values or []:
+        asked.extend(part.strip() for part in value.split(","))
+    asked = [name for name in asked if name]
+    unknown = [name for name in asked if name not in CARD_NAMES]
+    if unknown:
+        raise SystemExit(
+            "seal.py: not a card: %s\n"
+            "Cards are: %s"
+            % (", ".join(unknown), ", ".join(CARD_NAMES)))
+    # Page order, and each card once, however the options were written.
+    return [name for name in CARD_NAMES if name in asked]
+
 HEADER = (
     "/* Bravia Console deployment config, written by seal.py.\n"
-    "   The address and pre-shared key inside are encrypted with a password;\n"
-    "   the console asks for it at launch, unless that browser has been told\n"
-    "   to stay signed in. Reseal to change any of them. */\n\n"
+    "   The address, the pre-shared key and the choice of cards inside are\n"
+    "   encrypted with a password; the console asks for it at launch, unless\n"
+    "   that browser has been told to stay signed in. Reseal to change any\n"
+    "   of them. */\n\n"
 )
 
 
@@ -208,6 +258,12 @@ def main() -> int:
                         help="read the pre-shared key from this file instead")
     parser.add_argument("--interval", type=int, default=5,
                         help="starting refresh interval in seconds (default 5)")
+    parser.add_argument("--hide", action="append", metavar="CARDS",
+                        help=(
+                            "a card the deployed console should never draw. "
+                            "Repeatable, and takes a comma-separated list. "
+                            "One of: " + ", ".join(CARD_NAMES)
+                        ))
     parser.add_argument("--out", default="deploy-config.js",
                         help="where to write it (default deploy-config.js)")
     parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS,
@@ -233,6 +289,11 @@ def main() -> int:
             "seal.py: --iterations above %d produces a file the console refuses to "
             "open, so it is rejected here rather than after it is deployed."
             % MAX_ITERATIONS)
+    # Checked here, with the other arguments, rather than beside the payload
+    # it goes into: a mistyped card name should be refused before somebody is
+    # asked to type a password twice.
+    hidden = parse_hidden(args.hide)
+
     if args.iterations < DEFAULT_ITERATIONS:
         print("  warning: %d rounds is weaker than the %d this format expects"
               % (args.iterations, DEFAULT_ITERATIONS), file=sys.stderr)
@@ -282,6 +343,10 @@ def main() -> int:
         password = ask_password()
 
     secret = {"host": args.host, "psk": psk, "interval": args.interval}
+    # Left out of the payload when nothing was asked for, so a deployment
+    # that hides nothing seals exactly what this file always sealed.
+    if hidden:
+        secret["hiddenCards"] = hidden
     blob = seal(password, secret, args.iterations)
 
     # Opened again before it is offered, the way pack.html does, so that a
@@ -298,6 +363,8 @@ def main() -> int:
     print("  Wrote %s" % out)
     print("  Sealed %s with %d PBKDF2 rounds, and opened it again to check."
           % (args.host, args.iterations))
+    if hidden:
+        print("  The console will not draw: %s." % ", ".join(hidden))
     print()
     print("  Put it next to index.html. The console will start at a password prompt.")
     print("  There is no recovery for the password: reseal to change anything.")

@@ -8,6 +8,35 @@ The release workflow lifts the section matching a pushed tag out of this file an
 publishes it as the release notes, so a version with no section here does not get a
 release page.
 
+## [1.3.0] - 2026-08-29
+
+### Added
+
+- **Cards a deployment leaves out.** A sealed `deploy-config.js` can carry
+  `hiddenCards`, an optional list of card names, and the console takes each one
+  named out of the document as the config opens: before it has fetched anything
+  or drawn anything, so the card is never there rather than hidden away. It is
+  how a copy going on a wall panel shows power, inputs and volume and nothing
+  else.
+
+  `pack.html` gains a **Cards to leave out** picker, and `seal.py` a `--hide`
+  option that is repeatable and takes a comma-separated list. Both refuse, or
+  simply cannot offer, a name that is not a card; the console itself passes an
+  unknown name over rather than refusing a config it can otherwise open.
+
+  Nothing in the app offers the list and nothing in the app can put a card back.
+  That is the point: it belongs to whoever sealed the deployment, and resealing
+  is the only way to change it. A config without the field behaves exactly as it
+  did, and an ordinary copy running against the placeholder has no config file to
+  carry one.
+
+  The picture, sound and speaker cards each cost an RPC per refresh, and one left
+  out now costs none.
+
+  `tests/lint.js` gained a check with it: the card list in `index.html`,
+  `pack.html` and `seal.py` has to agree, since a copy that falls behind would
+  fail silently rather than loudly.
+
 ## [1.2.0] - 2026-08-29
 
 ### Removed
@@ -103,6 +132,7 @@ what it does as of this version rather than an account of how it got here.
   systems, and a tagged release built from a proven artefact with notes taken
   from this file.
 
+[1.3.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.3.0
 [1.2.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.2.0
 [1.1.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.0.0

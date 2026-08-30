@@ -21,6 +21,12 @@
     color: var(--ink-dim);
   }
   #pack input[type="text"], #pack input[type="password"], #pack input[type="number"] { width: 100%; }
+  #pack select[multiple] {
+    width: 100%;
+    padding: 6px;
+    font-size: 13px;
+  }
+  #pack select[multiple] option { padding: 3px 4px; }
   #pack .psk-row input { width: auto; }
   #pack p { line-height: 1.55; }
   #pack .lede { color: var(--ink-dim); font-size: 14px; }
@@ -83,6 +89,26 @@
     <input type="number" id="pk-interval" min="1" max="3600" step="1" value="5">
     <p class="hint">A starting value. Each browser can change it afterwards, and remembers its own.</p>
 
+    <label for="pk-hidden">Cards to leave out</label>
+    <select id="pk-hidden" multiple size="8">
+      <option value="power">Power</option>
+      <option value="playing">On (what is playing)</option>
+      <option value="volume">Audio</option>
+      <option value="inputs">Inputs</option>
+      <option value="apps">Apps</option>
+      <option value="keys">Remote Keys</option>
+      <option value="text">Text Entry</option>
+      <option value="picture">Picture</option>
+      <option value="sound">Sound Modes</option>
+      <option value="system">System</option>
+      <option value="speaker">Speaker Setup</option>
+    </select>
+    <p class="hint">Optional, and nothing is left out unless something is picked here.
+      A card chosen here is never drawn by the deployed console: it is not fetched for,
+      not shown, and not offered anywhere in the app, because this file is the only
+      place the choice is made. Ctrl-click, or Cmd-click on a Mac, to pick several or
+      to unpick one. Reseal to change the list later.</p>
+
     <label for="pk-password">Password</label>
     <input type="password" id="pk-password" autocomplete="new-password" spellcheck="false">
 
@@ -121,9 +147,10 @@ const $ = (id) => document.getElementById(id);
 
 const HEADER =
   '/* Bravia Console deployment config, written by pack.html.\n' +
-  '   The address and pre-shared key inside are encrypted with a password;\n' +
-  '   the console asks for it at launch, unless that browser has been told\n' +
-  '   to stay signed in. Repack to change any of them. */\n\n';
+  '   The address, the pre-shared key and the choice of cards inside are\n' +
+  '   encrypted with a password; the console asks for it at launch, unless\n' +
+  '   that browser has been told to stay signed in. Repack to change any\n' +
+  '   of them. */\n\n';
 
 function fail(msg) {
   const err = $('pack-error');
@@ -154,6 +181,7 @@ $('pack-form').addEventListener('submit', async (e) => {
   const host = $('pk-host').value.trim();
   const psk = $('pk-psk').value;
   const interval = Math.max(1, parseInt($('pk-interval').value, 10) || 5);
+  const hiddenCards = [...$('pk-hidden').selectedOptions].map(o => o.value);
   const password = $('pk-password').value;
 
   if (!psk) return fail('Enter the pre-shared key the display expects.');
@@ -168,7 +196,10 @@ $('pack-form').addEventListener('submit', async (e) => {
   await paintPause();
 
   try {
+    // Left out of the payload entirely when nothing was picked, so a
+    // deployment that hides nothing seals exactly what it always did.
     const secret = { host, psk, interval };
+    if (hiddenCards.length) secret.hiddenCards = hiddenCards;
     const blob = Lockbox.seal(password, secret);
     // Open it again before handing it over: a file nobody can open is
     // worse than no file, and this is the only chance to notice.
