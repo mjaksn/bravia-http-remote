@@ -165,6 +165,16 @@ r = run([
 eq('two assignments that both run leave the later one',
    r.stdout.trim(), 'volume|');
 
+/* The file the installer writes says to edit the list by hand, and double
+   quotes are as valid there as single ones. Left on, they would arrive as
+   part of the card name and end the next run on "not a card". */
+r = run([
+  'printf "%s\\n" \'window.BRAVIA_HIDDEN_CARDS = ["apps", "keys"];\' > "$CONFIG_FILE"',
+  'saved_cards',
+].join('\n'));
+eq('a list hand-edited with double quotes reads the same as one with single',
+   lastLine(r.stdout), 'apps,keys');
+
 /* The first thing Copilot found: a --lock run that nobody answered used to
    seal an empty list straight over a real one. */
 r = run([

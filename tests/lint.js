@@ -92,9 +92,13 @@ if (!/window\.BRAVIA_HIDDEN_CARDS = \[\];/.test(placeholder)) {
    both carry their own copy of the list: pack.html offers them in its
    dropdown, seal.py accepts them after --hide. Neither can read index.html
    at the moment it needs them, one being opened from disk and the other
-   having no browser at all. scripts/install.sh asks about the same cards
-   and is not checked here, because it reads them out of index.html rather
-   than keeping a copy.
+   having no browser at all.
+
+   scripts/install.sh reads the cards out of index.html rather than keeping
+   a copy of its own, but its --help text names them all in a sentence, and
+   so do the README and the comment in the deploy-config.js this repository
+   ships. Prose is a copy like any other and goes stale the same way, so
+   those three are checked below too, by name and in order.
 
    A copy that has fallen behind fails quietly rather than loudly. The
    console passes over a name matching no card, on purpose, so a renamed
@@ -121,6 +125,32 @@ if (!cardIds.length) {
       note(`the card list in ${file} disagrees with index.html:\n` +
            `  index.html  ${cardIds.join(', ')}\n` +
            `  ${file.padEnd(10)}  ${list.join(', ')}`);
+    }
+  }
+}
+
+/* The same names again, written out for a person to read. Each file wraps
+   and punctuates them its own way, so the text is flattened to bare words
+   before the run is looked for: backticks dropped, commas and the "and"
+   before the last name turned into spaces, every run of whitespace
+   collapsed. What is left has to hold the cards in order. */
+const PROSE_CARDS = ['scripts/install.sh', 'README.md', 'deploy-config.js'];
+
+if (cardIds.length) {
+  const wanted = cardIds.join(' ');
+  for (const file of PROSE_CARDS) {
+    const flat = read(file)
+      .replace(/`/g, '')
+      .replace(/,/g, ' ')
+      .replace(/\band\b/g, ' ')
+      .replace(/\s+/g, ' ');
+    // On word boundaries rather than as a plain substring, so that a longer
+    // word starting with the last name cannot stand in for it: "speakers"
+    // would otherwise pass for "speaker". A boundary rather than a space
+    // because the sentence in install.sh ends the run with a full stop.
+    if (!new RegExp('\\b' + wanted + '\\b').test(flat)) {
+      note(`${file} does not name the cards, in order, as index.html has them:\n` +
+           `  index.html  ${cardIds.join(', ')}`);
     }
   }
 }
@@ -203,6 +233,7 @@ if (problems.length) {
 }
 console.log(`lint ok: ${JS.length} scripts parse, version ${pkgVersion} agrees in ` +
             'package.json, app.js and CHANGELOG.md, deploy-config.js is the placeholder, ' +
-            `the ${cardIds.length} cards agree in index.html, pack.html and seal.py, ` +
+            `the ${cardIds.length} cards agree in index.html, pack.html and seal.py ` +
+            `and are named in order in ${PROSE_CARDS.length} more, ` +
             `punctuation clean across ${PROSE.length} files, ` +
             `${SHELL.length + PYTHON.length} shell and python files parse`);

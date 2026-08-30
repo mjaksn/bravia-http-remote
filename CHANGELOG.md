@@ -46,11 +46,19 @@ release page.
   The picture, sound and speaker cards each cost an RPC per refresh, and one
   left out now costs none.
 
-  `tests/lint.js` gained two checks with it: the card list in `index.html`,
+  `tests/lint.js` gained three checks with it: the card list in `index.html`,
   `pack.html` and `seal.py` has to agree, since a copy that falls behind would
-  fail silently rather than loudly, and the committed `deploy-config.js` has to
-  carry an empty list, since one committed here would take a card away from
-  every clone.
+  fail silently rather than loudly; the names written out for a person to read,
+  in the installer's `--help`, the README and the shipped `deploy-config.js`,
+  have to match it in order, since prose goes stale the same way a list does;
+  and the committed `deploy-config.js` has to carry an empty list, since one
+  committed here would take a card away from every clone.
+
+  A Docker install started before the config existed, or with a different one,
+  is made again rather than left running. Docker ties a single-file mount to
+  the file it found when the container was made, and the compose file does not
+  change when only the config does, so sealing over an existing card list would
+  otherwise leave the container serving the unsealed file it started with.
 
   Re-running the installer keeps the answer. A run that is neither asked nor
   told carries the last one into whatever it writes, sealed or not, and a seal

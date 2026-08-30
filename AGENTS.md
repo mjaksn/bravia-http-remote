@@ -34,8 +34,11 @@ worth knowing before rather than after:
   name cards the console must never draw, and the two files that seal such a config
   each carry their own copy of the names. A copy that falls behind fails silently,
   because the console passes over a name matching no card. `scripts/install.sh`
-  asks the same question and is not in the check, because it reads the cards out
-  of `index.html` instead of keeping a fourth copy.
+  asks the same question and reads the cards out of `index.html` rather than
+  keeping a list of its own, but its `--help` text names them all in a sentence,
+  and so do the README and the comment in the `deploy-config.js` the repository
+  ships. Prose is a copy like any other, so those three are in the check too, by
+  name and in order.
 - **`deploy-config.js` keeps an empty `BRAVIA_HIDDEN_CARDS`.** The same reasoning
   as the placeholder itself, one size down: a card list committed here is one every
   clone leaves out.

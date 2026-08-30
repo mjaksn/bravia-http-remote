@@ -262,10 +262,14 @@ saved_cards() {
     # comment, indented. A config copied from that file and edited by hand
     # would otherwise carry the example over rather than the list under it.
     #
+    # Either quote, because the file this writes invites hand-editing and
+    # a list written with double quotes is valid JavaScript the console
+    # honours. Left in, they would reach check_hide as part of the name.
+    #
     # And the last one wins, which is what the browser would be left with
     # if a file somehow held two.
     sed -n "s/^window\\.BRAVIA_HIDDEN_CARDS = \\[\\(.*\\)\\];.*/\\1/p" "$CONFIG_FILE" \
-        | tail -n 1 | tr -d "' "
+        | tail -n 1 | tr -d "'\" "
 }
 
 # Whether this run settles the card list at all, and to what. Sets ASKED as
@@ -518,6 +522,14 @@ fi
 
 SEALED=0
 
+# Whether this run put a different file at $CONFIG_FILE. Docker resolves a
+# single-file bind mount to an inode when the container is made, and every
+# way of replacing this file gives it a new one, so a container already
+# running goes on serving the old contents. The compose file does not
+# necessarily change with it, and an unchanged compose file is not recreated,
+# so this is what tells the Docker half to recreate anyway.
+CONFIG_REPLACED=0
+
 # A config sealed by an earlier run keeps being used, whatever was asked for
 # this time.
 #
@@ -611,6 +623,7 @@ elif [ "$LOCK" -eq 1 ]; then
     say "sealed the connection details into $CONFIG_FILE"
     if [ -n "$HIDE" ]; then say "and the cards to leave out: $HIDE"; fi
     SEALED=1
+    CONFIG_REPLACED=1
 fi
 
 # The unsealed half. The cards are all this file would hold, so there is
@@ -620,9 +633,14 @@ if [ "$SEALED" -eq 0 ] && [ "$ASKED" -eq 1 ]; then
     if [ -n "$HIDE" ]; then
         write_card_config "$CONFIG_FILE" "$HIDE"
         say "wrote the cards to leave out into $CONFIG_FILE: $HIDE"
+        # In place, so a running container sees it. Flagged all the same:
+        # a mount that was not there before still needs the container made
+        # again, and this is cheaper than working out which case it is.
+        CONFIG_REPLACED=1
     elif [ -f "$CONFIG_FILE" ]; then
         rm -f "$CONFIG_FILE"
         say "removed the card list an earlier run left at $CONFIG_FILE"
+        CONFIG_REPLACED=1
     fi
 elif [ "$SEALED" -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
     say "keeping the card list already at $CONFIG_FILE; --hide sets a new one"
@@ -789,8 +807,20 @@ COMPOSE
     fi
 
     if [ "$START_IT" -eq 1 ]; then
-        docker compose --file "$COMPOSE_FILE" up --detach >/dev/null
-        say "started the bravia-console container"
+        # --force-recreate when this run replaced the config. Compose only
+        # makes the container again when something it can see has changed,
+        # and the config is mounted from a path this file names either way,
+        # so sealing over an existing card list leaves the compose file
+        # byte for byte as it was. Without this the console would go on
+        # serving the file the container started with, and an install that
+        # said it had locked the console would have left it open.
+        if [ "$CONFIG_REPLACED" -eq 1 ]; then
+            docker compose --file "$COMPOSE_FILE" up --detach --force-recreate >/dev/null
+            say "started the bravia-console container, made again for the new config"
+        else
+            docker compose --file "$COMPOSE_FILE" up --detach >/dev/null
+            say "started the bravia-console container"
+        fi
     fi
 fi
 
