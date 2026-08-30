@@ -2,9 +2,9 @@ version: 2
 
 # Actions and the base image, which is the whole of it. The console itself has
 # no dependencies and is not going to acquire any: what is in the repository is
-# what runs in the browser, and the proxies are standard library on both
-# runtimes. The cooldown is deliberate: nothing released in the last seven days
-# is offered, because a version that young has had no time to be found wanting.
+# what runs in the browser, and proxy.py is standard library only. The cooldown
+# is deliberate: nothing released in the last seven days is offered, because a
+# version that young has had no time to be found wanting.
 updates:
   - package-ecosystem: github-actions
     directory: "/"

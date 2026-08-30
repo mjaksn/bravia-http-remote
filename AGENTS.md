@@ -41,8 +41,8 @@ worth knowing before rather than after:
 - **WebCrypto is not available.** The app is served over plain `http://` on a LAN, which
   is not a secure context, so `crypto.subtle` is missing exactly where it would be used.
   `crypto.getRandomValues` is fine. This is why `lockbox.js` implements its own hashing.
-- **Keep the two proxies in step.** A change to one belongs in the other, including its
-  comments and its usage text.
+- **`proxy.py` is the only proxy.** Its usage text and its comments are documentation
+  as much as the README is, so a change to what it accepts belongs in both.
 - **Prose the program emits is documentation.** Toasts, banner text, dialog copy and
   command line output age the same way a README does, and a claim usually appears in more
   than one place.
