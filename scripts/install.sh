@@ -9,8 +9,9 @@
 # refuses to guess rather than hanging on a prompt that nobody is there to
 # answer.
 #
-# Safe to run more than once. An existing sealed config is left alone unless
-# you ask for a new one.
+# Safe to run more than once. An existing sealed config is left alone unless you
+# ask for a new one, and so is an existing list of cards to leave out: a run that
+# is neither asked nor told keeps whatever the last one settled.
 #
 set -euo pipefail
 
@@ -47,7 +48,8 @@ Options:
   --psk-file FILE      read the display's pre-shared key from this file
   --interval SECONDS   starting refresh interval when sealing (default 5)
   --hide CARDS         cards the console should never draw, comma-separated;
-                       repeatable, and asked for if this is left out
+                       repeatable. Asked for when there is a terminal; a run
+                       with neither keeps what an earlier run settled
   --password-file F    read the deployment password from this file
   --non-interactive    never prompt; fail if something needed is missing
   --no-start           install but do not start it
@@ -228,10 +230,12 @@ check_hide() {
     [ -n "$known" ] || die "could not read the cards out of $SOURCE_DIR/index.html"
     local IFS=","
     for name in $1; do
-        # A whole line, not a substring: "app" is not the card "apps". The
-        # pattern is passed with -e, so a name beginning with a hyphen is a
-        # pattern that does not match rather than an option to grep.
-        if ! printf '%s\n' "$known" | grep -qx -e "$name"; then
+        # A whole line and a fixed string, not a pattern: "app" is not the
+        # card "apps", and neither is "app.", which as a pattern would match
+        # it and then name nothing the console can find. -e as well, so a
+        # name starting with a hyphen is a string that does not match rather
+        # than an option to grep.
+        if ! printf '%s\n' "$known" | grep -qxF -e "$name"; then
             die "not a card: '$name'. Cards are: $(card_names | tr '\n' ' ')"
         fi
     done
@@ -240,12 +244,23 @@ check_hide() {
 # Sets HIDE rather than printing it, so that a bad answer can end the script
 # through die(): a $(...) here would put die in a subshell and carry on.
 choose_cards() {
-    local reply="" token="" name="" label="" picked="" n=0
+    local reply="" token="" name="" label="" picked="" n=0 current=""
 
     echo
     echo "  Which cards should this console leave out? Nothing is left out unless"
     echo "  you pick something, and the display's own capabilities still decide"
     echo "  the rest. Nobody at the browser can put one back."
+    # What an earlier run settled, if anything. The answer given here replaces
+    # it whole, blank included, so it has to be on screen before it is asked
+    # for.
+    if [ -f "$CONFIG_FILE" ]; then
+        current="$(sed -n "s/.*BRAVIA_HIDDEN_CARDS = \[\(.*\)\];.*/\1/p" "$CONFIG_FILE" | tr -d "' ")"
+    fi
+    if [ -n "$current" ]; then
+        echo
+        echo "  An earlier run left out: $current. What you answer here replaces"
+        echo "  that, and a blank answer puts every card back."
+    fi
     echo
     while read -r name label; do
         n=$((n + 1))
@@ -385,6 +400,13 @@ if [ -f "$CONFIG_FILE" ] && grep -q 'BRAVIA_DEPLOY_CONFIG = {' "$CONFIG_FILE"; t
     KEEPING=1
 fi
 
+# Whether this run settled the question at all. A re-run that was never
+# asked and never told leaves an earlier answer alone: picking up a new
+# version is the most ordinary reason to run this script again, and an
+# upgrade that quietly put a kiosk's cards back would be a poor way to
+# find out that the answer was not carried over.
+ASKED=0
+
 if [ "$KEEPING" -eq 1 ]; then
     if [ -n "$HIDE" ]; then
         say "ignoring --hide: the sealed config already at $CONFIG_FILE decides that"
@@ -392,8 +414,10 @@ if [ "$KEEPING" -eq 1 ]; then
     fi
 elif [ -n "$HIDE" ]; then
     check_hide "$HIDE"
+    ASKED=1
 elif [ "$INTERACTIVE" -eq 1 ] && [ -t 0 ]; then
     choose_cards
+    ASKED=1
 fi
 
 # == the sealed config =======================================================
@@ -509,7 +533,7 @@ fi
 # The unsealed half. The cards are all this file would hold, so there is
 # nothing to preserve across runs: it is written from this run's answers, and
 # taken away when this run picked nothing.
-if [ "$SEALED" -eq 0 ]; then
+if [ "$SEALED" -eq 0 ] && [ "$ASKED" -eq 1 ]; then
     if [ -n "$HIDE" ]; then
         write_card_config "$CONFIG_FILE" "$HIDE"
         say "wrote the cards to leave out into $CONFIG_FILE: $HIDE"
@@ -517,6 +541,8 @@ if [ "$SEALED" -eq 0 ]; then
         rm -f "$CONFIG_FILE"
         say "removed the card list an earlier run left at $CONFIG_FILE"
     fi
+elif [ "$SEALED" -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
+    say "keeping the card list already at $CONFIG_FILE; --hide sets a new one"
 fi
 
 # Sealed or not, this is the file that goes beside the app.

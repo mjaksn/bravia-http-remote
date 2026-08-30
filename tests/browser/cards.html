@@ -38,8 +38,10 @@ run(async () => {
 
   /* ── the controls that went with them ─────────────────────────────── */
   // The apps card owns the filter box and the "Close all" button, and boot
-  // binds listeners to both. A build that left the card out must still get
-  // through that, which is what "no app error" above is watching for.
+  // binds listeners to both. A build that left the card out has to get through
+  // that binding, and what proves it did is the settings dialog waited for
+  // above: main() opens it on its last line, so a throw on the way there ends
+  // the suite in that wait. watchErrors only annotates the log.
   ok('the controls inside a card that is gone went with it',
      a.$('app-filter') === null && a.$('btn-terminate') === null);
   ok('controls in a card that stayed are still bound',
