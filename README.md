@@ -166,9 +166,9 @@ docker run ... -v ~/deploy-config.js:/app/deploy-config.js:ro ...
 The image ships the placeholder. Baking a sealed one into a published image
 hands the blob to anyone who can pull it, and registry layers outlive any
 attempt to take it back, which turns "someone on my network could attack this
-offline" into "anyone could, forever". `seal.py` refuses to write into a
-directory holding a `Dockerfile` for the same reason, and both CI and the
-release workflow check that the image is carrying the placeholder.
+offline" into "anyone could, forever". `seal.py` refuses to write anywhere
+under a directory holding a `Dockerfile` for the same reason, and both CI and
+the release workflow check that the image is carrying the placeholder.
 
 ## Installing it
 

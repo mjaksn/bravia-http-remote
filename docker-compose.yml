@@ -42,9 +42,9 @@ services:
     # published image, where registry layers outlive any attempt to take it
     # back.
     #
-    # Make one with, and note the --out: seal.py refuses to write beside a
-    # Dockerfile, which is the guard that keeps a sealed config from being
-    # built into a published image.
+    # Make one with, and note the --out: seal.py refuses to write anywhere
+    # under a directory holding a Dockerfile, which is the guard that keeps a
+    # sealed config from being built into a published image.
     #
     #   python seal.py --host 192.168.1.50 --psk-file ./psk --out ~/deploy-config.js
     #

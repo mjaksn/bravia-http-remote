@@ -104,7 +104,7 @@ which is a fair trade for a file on your own network. A published image changes
 the population to anyone who can pull it, permanently, because registry layers
 outlive the file. Three things guard this and all three should stay:
 
-- `seal.py` refuses to write into a directory holding a `Dockerfile`.
+- `seal.py` refuses to write anywhere under a directory holding a `Dockerfile`.
 - CI checks the running container serves the placeholder.
 - The release workflow refuses to publish if `deploy-config.js` is not the
   placeholder. That refusal is a step in the `build` job, which every image job
