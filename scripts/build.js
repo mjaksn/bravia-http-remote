@@ -176,6 +176,15 @@ function main() {
     console.error('deploy-config.js is not the placeholder; refusing to build');
     process.exit(1);
   }
+  /* The same file's other half, and the same reasoning one size down: a card
+     list in here is one that every unpacked copy of the archive leaves out,
+     and nobody unpacking it has any reason to look in this file for the card
+     that went missing. Checked here as well as in tests/lint.js, because a
+     local `npm run build` runs this and not that. */
+  if (!/window\.BRAVIA_HIDDEN_CARDS = \[\];/.test(deployConfig)) {
+    console.error('deploy-config.js names cards to leave out; refusing to build');
+    process.exit(1);
+  }
 
   const entries = [];
   for (const f of FILES) collect(f, entries);

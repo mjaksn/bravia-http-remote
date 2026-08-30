@@ -4,10 +4,11 @@
  *
  *   node tests/lint.js
  *
- * Four things, each of which has gone wrong somewhere before: a script
+ * Five things, each of which has gone wrong somewhere before: a script
  * that does not parse, whether JavaScript, shell or Python; a version that
  * agrees with itself in only one place; a real deployment config committed
- * by accident; and punctuation this project does not use.
+ * by accident; a list of cards that three files no longer agree on; and
+ * punctuation this project does not use.
  */
 
 const { execSync, spawnSync } = require('child_process');
@@ -19,7 +20,8 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const JS = ['app.js', 'lockbox.js', 'deploy-config.js',
             'scripts/build.js', 'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js',
-            'tests/lockbox.test.js', 'tests/seal.test.js'];
+            'tests/lockbox.test.js', 'tests/seal.test.js',
+            'tests/install.test.js'];
 
 const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
                'index.html', 'pack.html', 'style.css', 'app.js', 'lockbox.js',
@@ -28,6 +30,7 @@ const PROSE = ['README.md', 'CHANGELOG.md', 'AGENTS.md', 'CLAUDE.md', 'LICENSE',
                'tests/lint.js', 'tests/serve.js', 'tests/run-browser.js', 'tests/lockbox.test.js',
                'tests/browser/harness.js', 'tests/browser/sealed.html',
                'tests/browser/unsealed.html', 'tests/browser/authfail.html',
+               'tests/browser/cards.html', 'tests/install.test.js',
                'seal.py', 'scripts/install.sh', 'Dockerfile', '.dockerignore',
                'docker-compose.yml'];
 
@@ -67,9 +70,89 @@ if (!read('CHANGELOG.md').includes('## [' + pkgVersion + ']')) {
 
 /* ── no real deployment config in the repository ───────────────────── */
 
-if (!/window\.BRAVIA_DEPLOY_CONFIG = null;/.test(read('deploy-config.js'))) {
+const placeholder = read('deploy-config.js');
+if (!/window\.BRAVIA_DEPLOY_CONFIG = null;/.test(placeholder)) {
   note('deploy-config.js is not the placeholder: a sealed deployment config ' +
        'must not be committed, since it pins every clone to one display');
+}
+/* The other half of the same file, and the same reasoning one size down: a
+   card list committed here is one every clone leaves out, and the person it
+   surprises has no reason to look in this file for the card that went
+   missing. */
+if (!/window\.BRAVIA_HIDDEN_CARDS = \[\];/.test(placeholder)) {
+  note('deploy-config.js does not carry an empty BRAVIA_HIDDEN_CARDS: the ' +
+       'committed file must leave every card in, since a list here pins ' +
+       'every clone to one layout');
+}
+
+/* ── the list of cards agrees in three places ──────────────────────── */
+
+/* index.html owns the cards. A sealed config may name some of them as ones
+   the console must never draw, and the two files that seal such a config
+   both carry their own copy of the list: pack.html offers them in its
+   dropdown, seal.py accepts them after --hide. Neither can read index.html
+   at the moment it needs them, one being opened from disk and the other
+   having no browser at all.
+
+   scripts/install.sh reads the cards out of index.html rather than keeping
+   a copy of its own, but its --help text names them all in a sentence, and
+   so do the README and the comment in the deploy-config.js this repository
+   ships. Prose is a copy like any other and goes stale the same way, so
+   those three are checked below too, by name and in order.
+
+   A copy that has fallen behind fails quietly rather than loudly. The
+   console passes over a name matching no card, on purpose, so a renamed
+   card turns a deployment's choice into a card that comes back, and a card
+   added here and nowhere else is simply one nobody can leave out. */
+
+const cardIds = [...read('index.html')
+  .matchAll(/<section class="card" id="card-([a-z]+)"/g)].map(m => m[1]);
+const packSelect = read('pack.html').match(/id="pk-hidden"[\s\S]*?<\/select>/);
+const packCards = packSelect
+  ? [...packSelect[0].matchAll(/<option value="([a-z]+)"/g)].map(m => m[1]) : null;
+const sealTable = read('seal.py').match(/^CARDS = \(([\s\S]*?)^\)/m);
+const sealCards = sealTable
+  ? [...sealTable[1].matchAll(/\("([a-z]+)",/g)].map(m => m[1]) : null;
+
+if (!cardIds.length) {
+  note('index.html has no cards, so the card lists cannot be checked against it');
+} else {
+  // Order as well as membership: both lists are read by a person choosing
+  // cards, and they should read in the order the page lays them out.
+  for (const [file, list] of [['pack.html', packCards], ['seal.py', sealCards]]) {
+    if (!list) { note(`${file} has no card list where one was expected`); continue; }
+    if (list.join(',') !== cardIds.join(',')) {
+      note(`the card list in ${file} disagrees with index.html:\n` +
+           `  index.html  ${cardIds.join(', ')}\n` +
+           `  ${file.padEnd(10)}  ${list.join(', ')}`);
+    }
+  }
+}
+
+/* The same names again, written out for a person to read. Each file wraps
+   and punctuates them its own way, so the text is flattened to bare words
+   before the run is looked for: backticks dropped, commas and the "and"
+   before the last name turned into spaces, every run of whitespace
+   collapsed. What is left has to hold the cards in order. */
+const PROSE_CARDS = ['scripts/install.sh', 'README.md', 'deploy-config.js'];
+
+if (cardIds.length) {
+  const wanted = cardIds.join(' ');
+  for (const file of PROSE_CARDS) {
+    const flat = read(file)
+      .replace(/`/g, '')
+      .replace(/,/g, ' ')
+      .replace(/\band\b/g, ' ')
+      .replace(/\s+/g, ' ');
+    // On word boundaries rather than as a plain substring, so that a longer
+    // word starting with the last name cannot stand in for it: "speakers"
+    // would otherwise pass for "speaker". A boundary rather than a space
+    // because the sentence in install.sh ends the run with a full stop.
+    if (!new RegExp('\\b' + wanted + '\\b').test(flat)) {
+      note(`${file} does not name the cards, in order, as index.html has them:\n` +
+           `  index.html  ${cardIds.join(', ')}`);
+    }
+  }
 }
 
 /* ── punctuation ───────────────────────────────────────────────────── */
@@ -150,5 +233,7 @@ if (problems.length) {
 }
 console.log(`lint ok: ${JS.length} scripts parse, version ${pkgVersion} agrees in ` +
             'package.json, app.js and CHANGELOG.md, deploy-config.js is the placeholder, ' +
+            `the ${cardIds.length} cards agree in index.html, pack.html and seal.py ` +
+            `and are named in order in ${PROSE_CARDS.length} more, ` +
             `punctuation clean across ${PROSE.length} files, ` +
             `${SHELL.length + PYTHON.length} shell and python files parse`);

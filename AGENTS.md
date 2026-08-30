@@ -13,11 +13,11 @@ not accidents.
 | `lockbox.js` | Self-contained SHA-256 / HMAC / PBKDF2 used to seal a deployment config. |
 | `pack.html` | Standalone page that writes `deploy-config.js`. |
 | `seal.py` | The same file from a shell, for an installer or a machine with no display. |
-| `deploy-config.js` | Placeholder in the repository. A real one is produced per deployment. |
+| `deploy-config.js` | Placeholder in the repository. A real one is produced per deployment. Also where a deployment names cards the console must never draw. |
 | `proxy.py` | Optional same-origin proxy, for displays that will not answer a CORS preflight. |
 | `tests/` | Node unit tests and browser suites. No test framework. |
 | `scripts/build.js` | Builds the release archive, zip writer included. One file list, used by both workflows. |
-| `scripts/install.sh` | Installs the console as a systemd service or a Docker container, sealing a config on the way if asked. |
+| `scripts/install.sh` | Installs the console as a systemd service or a Docker container, sealing a config on the way if asked, and asking which cards to leave out. |
 
 ## Rules that the tooling enforces
 
@@ -29,6 +29,19 @@ worth knowing before rather than after:
   number. A release additionally requires the tag to match the first two.
 - **`deploy-config.js` stays the placeholder.** Committing a sealed one would pin every
   clone to one display and put a real pre-shared key in the history.
+- **The list of cards agrees in three places**: the `id="card-x"` sections in
+  `index.html`, the dropdown in `pack.html` and `CARDS` in `seal.py`. A config may
+  name cards the console must never draw, and the two files that seal such a config
+  each carry their own copy of the names. A copy that falls behind fails silently,
+  because the console passes over a name matching no card. `scripts/install.sh`
+  asks the same question and reads the cards out of `index.html` rather than
+  keeping a list of its own, but its `--help` text names them all in a sentence,
+  and so do the README and the comment in the `deploy-config.js` the repository
+  ships. Prose is a copy like any other, so those three are in the check too, by
+  name and in order.
+- **`deploy-config.js` keeps an empty `BRAVIA_HIDDEN_CARDS`.** The same reasoning
+  as the placeholder itself, one size down: a card list committed here is one every
+  clone leaves out.
 - **No em dashes and no double hyphens used as punctuation.** Long command line options,
   CSS custom properties and HTML comments are unaffected.
 - **Every script parses.**
@@ -43,6 +56,10 @@ worth knowing before rather than after:
   `crypto.getRandomValues` is fine. This is why `lockbox.js` implements its own hashing.
 - **`proxy.py` is the only proxy.** Its usage text and its comments are documentation
   as much as the README is, so a change to what it accepts belongs in both.
+- **A card is looked up before it is drawn.** A deployment can name cards the
+  console takes out of the document as its config opens, so every renderer has to
+  survive its card not being there. That is one early return each, marked as such,
+  and it is also where the picture, sound and speaker cards save their RPC.
 - **Prose the program emits is documentation.** Toasts, banner text, dialog copy and
   command line output age the same way a README does, and a claim usually appears in more
   than one place.
@@ -50,11 +67,12 @@ worth knowing before rather than after:
 ## Tests
 
 ```bash
-npm run lint          # parses, versions, placeholder, punctuation
+npm run lint          # parses, versions, placeholder, card lists, punctuation
 npm run test:unit     # lockbox primitives against Node's crypto
 npm run test:seal     # seal.py and lockbox.js open each other's work
+npm run test:install  # the installer's card handling, as bash functions
 npm run test:browser  # the real pages driven in headless Chrome
-npm test              # all four
+npm test              # all five
 ```
 
 The browser suites need Chrome, Chromium or Edge; set `CHROME_PATH` if it is somewhere
@@ -63,6 +81,12 @@ deployment config per suite, so the working tree is never modified by a test run
 `--root DIR` to `tests/run-browser.js` to run them against an unpacked release archive
 instead of the working tree, which is what continuous integration does to prove the
 artefact works.
+
+`tests/install.test.js` needs none of that. `scripts/install.sh` wants root and a real
+machine to run end to end, so the test lifts the functions it cares about out of the
+script by name and drives them in bash. What it checks is therefore the shipped code
+rather than a copy that would go on passing after the script changed, and a function
+renamed or removed there fails the test outright rather than quietly checking nothing.
 
 ## Two implementations of one format
 

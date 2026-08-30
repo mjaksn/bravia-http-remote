@@ -47,12 +47,28 @@ const SUITES = [
     page: 'sealed.html',
     // Port 1 answers nothing, so the connection attempt fails at once
     // instead of holding the suite up for the request timeout.
-    deployConfig: sealed({ host: '127.0.0.1:1', psk: 'super-secret-psk', interval: 7 }),
+    deployConfig: sealed({
+      host: '127.0.0.1:1', psk: 'super-secret-psk', interval: 7,
+      // Two real cards and one name that is not a card: the suite checks
+      // both that the two go and that the third is passed over rather
+      // than throwing the unlock away.
+      hiddenCards: ['apps', 'sound', 'not-a-card'],
+    }),
   },
   {
     name: 'unsealed',
     page: 'unsealed.html',
     deployConfig: null,      // the placeholder the repo ships
+  },
+  {
+    // The other half of the same feature: a deploy-config.js that seals
+    // nothing and names cards, which is what install.sh writes when it is
+    // not asked to lock anything.
+    name: 'cards',
+    page: 'cards.html',
+    deployConfig: '/* generated for a test run */\n' +
+      'window.BRAVIA_DEPLOY_CONFIG = null;\n' +
+      "window.BRAVIA_HIDDEN_CARDS = ['apps', 'picture', 'not-a-card'];\n",
   },
   {
     name: 'authfail',

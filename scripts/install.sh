@@ -3,14 +3,16 @@
 # Install Bravia Console, either as a systemd service or as a Docker container,
 # and optionally seal a password-protected deployment config on the way.
 #
-# It asks which, then asks for the display's address and the port to serve on,
-# and, when it is sealing a locked config, for the pre-shared key set on the
-# display. Every answer can be given as a flag instead, and --non-interactive
+# It asks which, then asks for the display's address, the port to serve on, and
+# which of the console's cards this copy should leave out. The pre-shared key
+# set on the display is asked for only when it is sealing a locked config.
+# Every answer can be given as a flag instead, and --non-interactive
 # refuses to guess rather than hanging on a prompt that nobody is there to
 # answer.
 #
-# Safe to run more than once. An existing sealed config is left alone unless
-# you ask for a new one.
+# Safe to run more than once. An existing sealed config is left alone unless you
+# ask for a new one, and so is an existing list of cards to leave out: a run that
+# is neither asked nor told keeps whatever the last one settled.
 #
 set -euo pipefail
 
@@ -46,10 +48,19 @@ Options:
   --no-lock            do not seal one; each browser is asked for the details
   --psk-file FILE      read the display's pre-shared key from this file
   --interval SECONDS   starting refresh interval when sealing (default 5)
+  --hide CARDS         cards the console should never draw, comma-separated;
+                       repeatable, and --hide '' puts every card back. Asked
+                       for when there is a terminal; a run with neither keeps
+                       what an earlier run settled
   --password-file F    read the deployment password from this file
   --non-interactive    never prompt; fail if something needed is missing
   --no-start           install but do not start it
   --help               show this message
+
+The cards are named after the ids in index.html, which is also where this
+script reads them from: power, playing, volume, inputs, apps, keys, text,
+picture, sound, system and speaker. They are a deployment's choice and not a
+security measure, and nothing in the console puts one back.
 
 This script never takes the pre-shared key or the deployment password as an
 argument, and never passes one to seal.py either, because an argument is visible
@@ -70,6 +81,18 @@ need() {
     printf '%s' "$2"
 }
 
+# --hide is repeatable and also takes a comma-separated list, so the two forms
+# collapse into one comma-separated string here and are checked against the
+# cards that actually exist further down, once index.html has been found.
+join_hide() {
+    # An empty piece adds nothing. `--hide ''` is how a run says "put every
+    # card back", and joining it on would leave a trailing comma that
+    # check_hide would later read as a card with no name.
+    if [ -z "$2" ]; then printf '%s' "$1"
+    elif [ -z "$1" ]; then printf '%s' "$2"
+    else printf '%s,%s' "$1" "$2"; fi
+}
+
 MODE=""
 TV=""
 PORT=""
@@ -78,6 +101,10 @@ LOCK=""
 PSK=""
 PSK_FILE=""
 INTERVAL=""
+HIDE=""
+# Whether --hide was passed, which is not the same as what it was passed:
+# `--hide ''` is an answer, and the answer is "none of them".
+HIDE_SET=0
 PASSWORD_FILE=""
 INTERACTIVE=1
 START_IT=1
@@ -98,6 +125,8 @@ while [ $# -gt 0 ]; do
         --psk-file=*) PSK_FILE="${1#*=}"; shift ;;
         --interval) INTERVAL="$(need "$@")"; shift 2 ;;
         --interval=*) INTERVAL="${1#*=}"; shift ;;
+        --hide) HIDE="$(join_hide "$HIDE" "$(need "$@")")"; HIDE_SET=1; shift 2 ;;
+        --hide=*) HIDE="$(join_hide "$HIDE" "${1#*=}")"; HIDE_SET=1; shift ;;
         --password-file) PASSWORD_FILE="$(need "$@")"; shift 2 ;;
         --password-file=*) PASSWORD_FILE="${1#*=}"; shift ;;
         --non-interactive) INTERACTIVE=0; shift ;;
@@ -174,6 +203,181 @@ check_port() {
     fi
 }
 
+# == the console's cards =====================================================
+
+# Read out of index.html rather than kept as a list here. The names and the
+# labels are both in that file, one <section> per card, and a copy in this
+# script would be a fourth place for them to drift; tests/lint.js already has
+# to keep three in step.
+list_cards() {
+    awk '
+        /<section class="card" id="card-/ {
+            name = $0
+            sub(/.*id="card-/, "", name)
+            sub(/".*/, "", name)
+            want = 1
+            next
+        }
+        want && /<h2>/ {
+            label = $0
+            sub(/.*<h2>/, "", label)
+            sub(/<\/h2>.*/, "", label)
+            print name, label
+            want = 0
+        }
+    ' "$SOURCE_DIR/index.html"
+}
+
+card_names() { list_cards | awk '{print $1}'; }
+
+# A name that is not a card seals, or writes, as a card that quietly stays
+# put: the console passes an unknown name over rather than refusing the
+# config. So it is refused here, before anything is written and before
+# anybody is asked for a password.
+check_hide() {
+    local name="" known=""
+    known="$(card_names)"
+    [ -n "$known" ] || die "could not read the cards out of $SOURCE_DIR/index.html"
+    local IFS=","
+    for name in $1; do
+        # A whole line and a fixed string, not a pattern: "app" is not the
+        # card "apps", and neither is "app.", which as a pattern would match
+        # it and then name nothing the console can find. -e as well, so a
+        # name starting with a hyphen is a string that does not match rather
+        # than an option to grep.
+        if ! printf '%s\n' "$known" | grep -qxF -e "$name"; then
+            die "not a card: '$name'. Cards are: $(card_names | tr '\n' ' ')"
+        fi
+    done
+}
+
+# The cards an earlier unsealed run left out, comma-separated, and empty
+# when there is no such file. A sealed config is never read here: it is
+# encrypted, and a run that finds one keeps it whole rather than reaching
+# inside it.
+saved_cards() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    # Anchored at the first column, because the placeholder this project
+    # ships carries an example of the same assignment inside its opening
+    # comment, indented. A config copied from that file and edited by hand
+    # would otherwise carry the example over rather than the list under it.
+    #
+    # Either quote, because the file this writes invites hand-editing and
+    # a list written with double quotes is valid JavaScript the console
+    # honours. Left in, they would reach check_hide as part of the name.
+    #
+    # And the last one wins, which is what the browser would be left with
+    # if a file somehow held two.
+    sed -n "s/^window\\.BRAVIA_HIDDEN_CARDS = \\[\\(.*\\)\\];.*/\\1/p" "$CONFIG_FILE" \
+        | tail -n 1 | tr -d "'\" "
+}
+
+# Whether this run settles the card list at all, and to what. Sets ASKED as
+# well as HIDE, because "left alone" and "set to nothing" are different
+# answers and only one of them is a re-run keeping what it found.
+#
+# A --hide with a value is an answer. So is --hide with an empty one, which
+# is the only way a run with nobody at the terminal can put every card back;
+# without the flag being tracked apart from its value the two would be the
+# same state, and clearing would be reachable from the prompt alone.
+settle_cards() {
+    if [ "$KEEPING" -eq 1 ]; then
+        if [ "$HIDE_SET" -eq 1 ]; then
+            say "ignoring --hide: the sealed config already at $CONFIG_FILE decides that"
+            HIDE=""
+        fi
+    elif [ "$HIDE_SET" -eq 1 ]; then
+        check_hide "$HIDE"
+        ASKED=1
+    elif [ "$INTERACTIVE" -eq 1 ] && [ -t 0 ]; then
+        choose_cards
+        ASKED=1
+    fi
+}
+
+# A seal writes the file the cards live in from scratch, so a run that was
+# neither asked nor told has to carry the last answer into the new one by
+# hand. The unsealed path keeps its own file and needs nothing. Without
+# this a --non-interactive --lock re-run would put every card back
+# silently, which is the one thing the header of this script promises it
+# will not do.
+#
+# Sets HIDE rather than printing it, for the same reason choose_cards does:
+# a $(...) would put a die() from check_hide in a subshell and carry on.
+carry_over_cards() {
+    [ "$ASKED" -eq 0 ] || return 0
+    HIDE="$(saved_cards)"
+    [ -n "$HIDE" ] || return 0
+    check_hide "$HIDE"
+    say "carrying over the cards an earlier run left out: $HIDE"
+}
+
+# Sets HIDE rather than printing it, so that a bad answer can end the script
+# through die(): a $(...) here would put die in a subshell and carry on.
+choose_cards() {
+    local reply="" token="" name="" label="" picked="" n=0 current=""
+
+    echo
+    echo "  Which cards should this console leave out? Nothing is left out unless"
+    echo "  you pick something, and the display's own capabilities still decide"
+    echo "  the rest. Nobody at the browser can put one back."
+    # What an earlier run settled, if anything. The answer given here replaces
+    # it whole, blank included, so it has to be on screen before it is asked
+    # for.
+    current="$(saved_cards)"
+    if [ -n "$current" ]; then
+        echo
+        echo "  An earlier run left out: $current. What you answer here replaces"
+        echo "  that, and a blank answer puts every card back."
+    fi
+    echo
+    while read -r name label; do
+        n=$((n + 1))
+        printf '    %2d) %s\n' "$n" "$label"
+    done <<CARDS
+$(list_cards)
+CARDS
+    echo
+
+    reply="$(ask "Numbers to leave out, separated by spaces, blank for none" "")"
+    for token in $(printf '%s' "$reply" | tr ',' ' '); do
+        case "$token" in
+            ''|*[!0-9]*) die "'$token' is not one of the numbers above" ;;
+        esac
+        name="$(list_cards | awk -v n="$token" 'NR == n {print $1}')"
+        [ -n "$name" ] || die "there is no card $token in the list above"
+        case ",$picked," in
+            *",$name,"*) continue ;;
+        esac
+        picked="$(join_hide "$picked" "$name")"
+    done
+    HIDE="$picked"
+}
+
+# The unsealed half of the same choice. No address and no key go in here, so
+# it is not a sealed config and is not treated as one: it is rewritten from
+# this run's answers, and removed when nothing is picked.
+write_card_config() {
+    local target="$1" name="" json=""
+    local IFS=","
+    for name in $2; do
+        if [ -n "$json" ]; then json="$json, "; fi
+        json="$json'$name'"
+    done
+    cat > "$target" <<CARDCONFIG
+/* Written by scripts/install.sh, and rewritten every time it runs.
+
+   Not a sealed deployment config: there is no address and no pre-shared key
+   in here, and every browser is still asked for both. All this file says is
+   which cards the console leaves out. Edit the list, or delete the file to
+   put every card back, and restart the service. */
+
+window.BRAVIA_DEPLOY_CONFIG = null;
+window.BRAVIA_HIDDEN_CARDS = [$json];
+CARDCONFIG
+    chmod 0644 "$target"
+}
+
 PYTHON=""
 find_python() {
     for candidate in python3 python; do
@@ -185,6 +389,32 @@ find_python() {
         fi
     done
     return 1
+}
+
+# Seal to a new file beside the target and put it in place only once that
+# has worked. Two things need this. seal.py refuses to overwrite, and an
+# unsealed card list may be sitting at the target already; and a run can
+# still fail after it starts, on a missing key file, an interval that is
+# not a number, or a password typed differently twice. Writing straight to
+# the target would mean a failed run had already taken away whatever was
+# there, which for a wall panel is its whole card selection.
+#
+# The rename is within one directory, so it replaces the old file whole or
+# not at all.
+seal_to() {
+    local target="$1"
+    shift
+    local tmp="$target.new"
+
+    rm -f "$tmp"
+    # In an if, so that a failure is handled here rather than ending the
+    # script through set -e with the half-written file still beside it.
+    if ! "$PYTHON" "$SOURCE_DIR/seal.py" --out "$tmp" "$@" >/dev/null; then
+        rm -f "$tmp"
+        die "sealing failed, and $target is as it was"
+    fi
+    mv "$tmp" "$target"
+    chmod 0644 "$target"
 }
 
 echo
@@ -251,6 +481,29 @@ if [ "$MODE" = "systemd" ] && [ -z "$BIND" ]; then
 fi
 BIND="${BIND:-0.0.0.0}"
 
+# == which cards ==============================================================
+
+CONFIG_FILE="$CONFIG_DIR/deploy-config.js"
+mkdir -p "$CONFIG_DIR"
+chmod 0755 "$CONFIG_DIR"
+
+# A config sealed by an earlier run decides its own cards, and they are inside
+# it where this script cannot reach them. Asking would collect an answer with
+# nowhere to go, so it does not ask, and says so if it was told.
+KEEPING=0
+if [ -f "$CONFIG_FILE" ] && grep -q 'BRAVIA_DEPLOY_CONFIG = {' "$CONFIG_FILE"; then
+    KEEPING=1
+fi
+
+# Whether this run settled the question at all. A re-run that was never
+# asked and never told leaves an earlier answer alone: picking up a new
+# version is the most ordinary reason to run this script again, and an
+# upgrade that quietly put a kiosk's cards back would be a poor way to
+# find out that the answer was not carried over.
+ASKED=0
+
+settle_cards
+
 # == the sealed config =======================================================
 
 if [ -z "$LOCK" ] && [ "$INTERACTIVE" -eq 0 ]; then
@@ -268,9 +521,14 @@ if [ -z "$LOCK" ]; then
 fi
 
 SEALED=0
-SEALED_FILE="$CONFIG_DIR/deploy-config.js"
-mkdir -p "$CONFIG_DIR"
-chmod 0755 "$CONFIG_DIR"
+
+# Whether this run put a different file at $CONFIG_FILE. Docker resolves a
+# single-file bind mount to an inode when the container is made, and every
+# way of replacing this file gives it a new one, so a container already
+# running goes on serving the old contents. The compose file does not
+# necessarily change with it, and an unchanged compose file is not recreated,
+# so this is what tells the Docker half to recreate anyway.
+CONFIG_REPLACED=0
 
 # A config sealed by an earlier run keeps being used, whatever was asked for
 # this time.
@@ -280,13 +538,26 @@ chmod 0755 "$CONFIG_DIR"
 # would be the worst thing this script could do, and running it again to pick
 # up a new version is the most ordinary reason to run it at all. Deleting the
 # file is how you unlock, and the closing banner says so.
-if [ -f "$SEALED_FILE" ]; then
+if [ "$KEEPING" -eq 1 ]; then
     SEALED=1
-    say "keeping the sealed config already at $SEALED_FILE"
+    say "keeping the sealed config already at $CONFIG_FILE"
     say "delete that file and run this again to change it, or to unlock"
 
 elif [ "$LOCK" -eq 1 ]; then
     find_python || die "python3 is needed to seal a config, and was not found"
+
+    # An unsealed run leaves a plain card list at this path, and the sealed
+    # file carries the same choice inside it, so that one is replaced. The
+    # choice itself is carried over first: this run may never have been
+    # asked, and putting every card back unasked is the one thing the header
+    # of this script promises will not happen.
+    #
+    # Nothing is taken away here. seal_to() replaces the file only once the
+    # seal has worked, so a run that fails leaves the old one where it was.
+    carry_over_cards
+    if [ -f "$CONFIG_FILE" ]; then
+        say "replacing the card list an earlier run left at $CONFIG_FILE"
+    fi
 
     if [ -n "$PSK_FILE" ]; then
         [ -f "$PSK_FILE" ] || die "$PSK_FILE does not exist"
@@ -326,16 +597,22 @@ elif [ "$LOCK" -eq 1 ]; then
     # verifies the file opens again before handing it over. --out is a path
     # outside any checkout, so a sealed config can never land in a build
     # context, which is the one place it must not be.
+    # Unquoted on purpose, so that an empty HIDE adds no argument at all.
+    # Every name in it has been checked against index.html, and a card name
+    # is letters and nothing else.
+    HIDE_ARG=""
+    if [ -n "$HIDE" ]; then HIDE_ARG="--hide $HIDE"; fi
+
     if [ -n "$PASSWORD_FILE" ]; then
-        "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
-            --interval "$INTERVAL" --out "$SEALED_FILE" \
-            --password-file "$PASSWORD_FILE" >/dev/null
+        seal_to "$CONFIG_FILE" --host "$TV" --psk-file "$psk_tmp" \
+            --interval "$INTERVAL" $HIDE_ARG \
+            --password-file "$PASSWORD_FILE"
     elif [ "$INTERACTIVE" -eq 0 ] || [ ! -t 0 ]; then
         die "sealing needs a password: use --password-file, or drop --lock"
     else
         echo
-        "$PYTHON" "$SOURCE_DIR/seal.py" --host "$TV" --psk-file "$psk_tmp" \
-            --interval "$INTERVAL" --out "$SEALED_FILE" >/dev/null
+        seal_to "$CONFIG_FILE" --host "$TV" --psk-file "$psk_tmp" \
+            --interval "$INTERVAL" $HIDE_ARG
     fi
 
     if [ "$psk_tmp_ours" -eq 1 ]; then
@@ -343,10 +620,35 @@ elif [ "$LOCK" -eq 1 ]; then
         trap - EXIT INT TERM
     fi
 
-    chmod 0644 "$SEALED_FILE"
-    say "sealed the connection details into $SEALED_FILE"
+    say "sealed the connection details into $CONFIG_FILE"
+    if [ -n "$HIDE" ]; then say "and the cards to leave out: $HIDE"; fi
     SEALED=1
+    CONFIG_REPLACED=1
 fi
+
+# The unsealed half. The cards are all this file would hold, so there is
+# nothing to preserve across runs: it is written from this run's answers, and
+# taken away when this run picked nothing.
+if [ "$SEALED" -eq 0 ] && [ "$ASKED" -eq 1 ]; then
+    if [ -n "$HIDE" ]; then
+        write_card_config "$CONFIG_FILE" "$HIDE"
+        say "wrote the cards to leave out into $CONFIG_FILE: $HIDE"
+        # In place, so a running container sees it. Flagged all the same:
+        # a mount that was not there before still needs the container made
+        # again, and this is cheaper than working out which case it is.
+        CONFIG_REPLACED=1
+    elif [ -f "$CONFIG_FILE" ]; then
+        rm -f "$CONFIG_FILE"
+        say "removed the card list an earlier run left at $CONFIG_FILE"
+        CONFIG_REPLACED=1
+    fi
+elif [ "$SEALED" -eq 0 ] && [ -f "$CONFIG_FILE" ]; then
+    say "keeping the card list already at $CONFIG_FILE; --hide sets a new one"
+fi
+
+# Sealed or not, this is the file that goes beside the app.
+HAVE_CONFIG=0
+if [ -f "$CONFIG_FILE" ]; then HAVE_CONFIG=1; fi
 
 # The key has done its work. Drop it rather than leaving it in the environment
 # of everything this script runs from here on.
@@ -385,10 +687,15 @@ if [ "$MODE" = "systemd" ]; then
     fi
     say "installed the app into $INSTALL_DIR"
 
-    # The sealed config replaces the placeholder that was just copied in.
-    if [ "$SEALED" -eq 1 ]; then
-        install -m 0644 "$CONFIG_DIR/deploy-config.js" "$INSTALL_DIR/deploy-config.js"
-        say "installed the sealed config"
+    # Whichever config this run settled on replaces the placeholder that was
+    # just copied in: the sealed one, or the plain list of cards to leave out.
+    if [ "$HAVE_CONFIG" -eq 1 ]; then
+        install -m 0644 "$CONFIG_FILE" "$INSTALL_DIR/deploy-config.js"
+        if [ "$SEALED" -eq 1 ]; then
+            say "installed the sealed config"
+        else
+            say "installed the card list"
+        fi
     fi
 
     chown -R root:root "$INSTALL_DIR"
@@ -459,13 +766,15 @@ else
     chmod 0755 "$CONFIG_DIR"
 
     mount_lines=""
-    if [ "$SEALED" -eq 1 ]; then
+    if [ "$HAVE_CONFIG" -eq 1 ]; then
         # Mounted, never copied into an image. A sealed blob inside a published
         # image can be pulled and attacked offline by anyone, and registry
-        # layers outlive any attempt to take it back.
+        # layers outlive any attempt to take it back. The unsealed card list
+        # is mounted the same way for the plainer reason that the published
+        # image is not this deployment's to rebuild.
         mount_lines="
     volumes:
-      - $CONFIG_DIR/deploy-config.js:/app/deploy-config.js:ro"
+      - $CONFIG_FILE:/app/deploy-config.js:ro"
     fi
 
     cat > "$COMPOSE_FILE" <<COMPOSE
@@ -498,8 +807,20 @@ COMPOSE
     fi
 
     if [ "$START_IT" -eq 1 ]; then
-        docker compose --file "$COMPOSE_FILE" up --detach >/dev/null
-        say "started the bravia-console container"
+        # --force-recreate when this run replaced the config. Compose only
+        # makes the container again when something it can see has changed,
+        # and the config is mounted from a path this file names either way,
+        # so sealing over an existing card list leaves the compose file
+        # byte for byte as it was. Without this the console would go on
+        # serving the file the container started with, and an install that
+        # said it had locked the console would have left it open.
+        if [ "$CONFIG_REPLACED" -eq 1 ]; then
+            docker compose --file "$COMPOSE_FILE" up --detach --force-recreate >/dev/null
+            say "started the bravia-console container, made again for the new config"
+        else
+            docker compose --file "$COMPOSE_FILE" up --detach >/dev/null
+            say "started the bravia-console container"
+        fi
     fi
 fi
 
@@ -555,6 +876,18 @@ else
   Run this again with --lock if that is not what you want.
 
 OPEN
+fi
+
+if [ -n "$HIDE" ]; then
+    cat <<CARDSNEXT
+  These cards are left out, and nothing in the console puts them back:
+
+      $HIDE
+
+  That is a choice about what this console is for, not a restriction on the
+  display: it will still do those things if it is asked another way.
+
+CARDSNEXT
 fi
 
 if [ "$MODE" = "systemd" ]; then

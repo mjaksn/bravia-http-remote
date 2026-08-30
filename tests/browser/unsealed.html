@@ -27,6 +27,13 @@ run(async () => {
      localStorage.getItem('bravia-console-remember') === null,
      a.read('JSON.stringify({...localStorage})'));
   ok('no stay-signed-in note outside a deployed build', a.$('deploy-remembered-note').hidden);
+  // This suite is served the placeholder the repository ships, whose card
+  // list is empty. A committed list would silently take a card away from
+  // every clone, so the shipped file is checked here as well as in the lint.
+  ok('the shipped config leaves every card in',
+     a.read('JSON.stringify(window.BRAVIA_HIDDEN_CARDS)') === '[]' &&
+     a.read('document.querySelectorAll("#cards .card").length') === 11,
+     a.read('JSON.stringify(window.BRAVIA_HIDDEN_CARDS)'));
   ok('no session note outside a deployed build', a.$('deploy-session-note').hidden);
   ok('an unsealed build opens settings, not a lock',
      a.$('settings-dialog').open && !a.$('unlock-dialog').open);
@@ -113,6 +120,8 @@ run(async () => {
   ok('the sealed file opens with the right password',
      opened.host === '10.0.0.9' && opened.psk === 'packed-key' && opened.interval === 4,
      JSON.stringify(opened));
+  ok('nothing picked seals no card list', !('hiddenCards' in opened),
+     JSON.stringify(opened));
 
   let denied = '';
   try { lockbox.open('deploy-pW', blob); } catch (e) { denied = e.message; }
@@ -133,6 +142,38 @@ run(async () => {
   const second = JSON.parse(again.slice(again.indexOf('{'), again.lastIndexOf('}') + 1));
   ok('each seal is unique',
      second.ct !== blob.ct && second.salt !== blob.salt && second.nonce !== blob.nonce);
+
+  /* ── cards to leave out ───────────────────────────────────────────── */
+
+  // The picker is a copy of a list the console owns, so the two are compared
+  // against each other here as well as in tests/lint.js: one proves the file
+  // has not drifted, this proves the page a person clicks is offering the
+  // cards that are actually there.
+  const consoleCards = [...a.win().document.querySelectorAll('#cards .card')]
+    .map((c) => c.id.replace('card-', ''));
+  const offered = [...p.$('pk-hidden').options].map((o) => o.value);
+  ok('the picker offers exactly the cards the console has',
+     offered.join(',') === consoleCards.join(','),
+     offered.join(',') + ' vs ' + consoleCards.join(','));
+
+  // Picked in the other order, to show that what is sealed is the page's
+  // order rather than the order they happened to be clicked in.
+  for (const opt of p.$('pk-hidden').options) {
+    opt.selected = opt.value === 'picture' || opt.value === 'apps';
+  }
+  p.fire('pack-form', 'submit');
+  await sleep(2000);
+  const third = p.$('pack-text').value;
+  const withCards = JSON.parse(third.slice(third.indexOf('{'), third.lastIndexOf('}') + 1));
+  const openedCards = lockbox.open('deploy-pw', withCards);
+  ok('the picked cards are sealed, in page order',
+     JSON.stringify(openedCards.hiddenCards) === JSON.stringify(['apps', 'picture']),
+     JSON.stringify(openedCards.hiddenCards));
+  ok('and the rest of the config is unchanged by picking them',
+     openedCards.host === '10.0.0.9' && openedCards.psk === 'packed-key' &&
+     openedCards.interval === 4);
+  ok('the card names are not readable in the file',
+     third.indexOf('hiddenCards') === -1);
 });
 </script>
 </body>

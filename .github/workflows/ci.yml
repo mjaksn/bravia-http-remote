@@ -48,6 +48,14 @@ jobs:
       - name: The sealer and the browser must agree
         run: node tests/seal.test.js
 
+      # install.sh needs root and a real machine to run end to end, so its
+      # card handling is driven as bash functions lifted out of the script.
+      # What it guards is what a re-run keeps: the choice of cards a run that
+      # nobody answered must carry into a new seal, and the config a failed
+      # seal must leave exactly where it was.
+      - name: The installer keeps what a re-run should keep
+        run: node tests/install.test.js
+
       # The browser suites drive the real pages. Both runner images ship a
       # Chromium already, so nothing is downloaded to run them.
       - name: Browser suites

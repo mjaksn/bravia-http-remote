@@ -8,6 +8,65 @@ The release workflow lifts the section matching a pushed tag out of this file an
 publishes it as the release notes, so a version with no section here does not get a
 release page.
 
+## [1.3.0] - 2026-08-29
+
+### Added
+
+- **Cards a deployment leaves out.** `deploy-config.js` can now name cards this
+  copy of the console never draws, and each one named is taken out of the
+  document before anything has been fetched or drawn, so the card is never there
+  rather than hidden away. It is how a page going on a wall panel shows power,
+  inputs and volume and nothing else.
+
+  Three ways to set it, and they all end in the same file:
+
+  - By hand. The placeholder the repository ships now carries an empty
+    `window.BRAVIA_HIDDEN_CARDS = []`, and a name added to it takes effect on
+    the next reload. No password and no tooling involved.
+  - Sealed, for a locked deployment. `pack.html` gains a **Cards to leave out**
+    picker and `seal.py` a `--hide` option, repeatable and comma-separated, and
+    the list travels inside the encrypted payload as `hiddenCards`.
+  - During the install. `scripts/install.sh` lists the cards and asks which to
+    leave out, sealed or not, and `--hide apps,keys` answers it without a
+    prompt, `--hide ''` puts every card back, and a re-run given neither keeps
+    what the last one settled. Without a seal it writes a `deploy-config.js`
+    holding the list and nothing else.
+
+  A copy using both ways at once gets both lists. `seal.py` and the installer
+  each refuse a name that is not a card, before anything is written and before
+  either asks for a password; the console itself passes an unknown name over, so
+  a typo edited into a file by hand leaves the card where it was rather than
+  breaking the page.
+
+  Nothing in the app offers the list and nothing in the app puts a card back.
+  That is the point: it says what this console is for. It is not a security
+  measure, in either form: a card left out is one the display would still obey
+  if it were asked another way.
+
+  The picture, sound and speaker cards each cost an RPC per refresh, and one
+  left out now costs none.
+
+  `tests/lint.js` gained three checks with it: the card list in `index.html`,
+  `pack.html` and `seal.py` has to agree, since a copy that falls behind would
+  fail silently rather than loudly; the names written out for a person to read,
+  in the installer's `--help`, the README and the shipped `deploy-config.js`,
+  have to match it in order, since prose goes stale the same way a list does;
+  and the committed `deploy-config.js` has to carry an empty list, since one
+  committed here would take a card away from every clone.
+
+  A Docker install started before the config existed, or with a different one,
+  is made again rather than left running. Docker ties a single-file mount to
+  the file it found when the container was made, and the compose file does not
+  change when only the config does, so sealing over an existing card list would
+  otherwise leave the container serving the unsealed file it started with.
+
+  Re-running the installer keeps the answer. A run that is neither asked nor
+  told carries the last one into whatever it writes, sealed or not, and a seal
+  that fails partway leaves the config it would have replaced exactly where it
+  was rather than taking a wall panel's card list with it.
+  `tests/install.test.js` holds both to that, driving the script's own
+  functions, since the script end to end wants root and a real machine.
+
 ## [1.2.0] - 2026-08-29
 
 ### Removed
@@ -103,6 +162,7 @@ what it does as of this version rather than an account of how it got here.
   systems, and a tagged release built from a proven artefact with notes taken
   from this file.
 
+[1.3.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.3.0
 [1.2.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.2.0
 [1.1.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.0.0

@@ -29,6 +29,10 @@ run(async () => {
   ok('empty state hidden while locked', a.$('empty-state').hidden);
   ok('no config yet', a.read('cfg') === null);
   ok('locked flag set', a.read('locked') === true);
+  // The cards this deployment leaves out are still in the document while
+  // it is locked: the config that names them has not been opened yet.
+  ok('every card is present before the config is opened',
+     !!a.$('card-apps') && !!a.$('card-sound') && !!a.$('card-power'));
   ok('a leftover stored config is purged at boot',
      localStorage.getItem('bravia-console-config') === null,
      localStorage.getItem('bravia-console-config'));
@@ -94,6 +98,25 @@ run(async () => {
   ok('mask matches the key in length',
      a.read('pskMask.length') === 16 && a.read('pskMasked.length') === 16);
   ok('mask is not all zeroes', a.read('pskMask.some(b => b !== 0)') === true);
+
+  /* ── cards the deployment leaves out ──────────────────────────────── */
+  /* Sealed with hiddenCards ['apps', 'sound', 'not-a-card']. */
+  ok('a card the config names is gone from the document', a.$('card-apps') === null);
+  ok('and so is the second one', a.$('card-sound') === null);
+  ok('cards it did not name are untouched',
+     !!a.$('card-power') && !!a.$('card-inputs') && !!a.$('card-keys') && !!a.$('card-system'));
+  ok('a name matching no card is passed over rather than refusing the config',
+     a.read('cfg') !== null && a.$('card-power') !== null);
+  // Every renderer looks its card up by id, so the ones whose card has gone
+  // must return rather than throw. Called directly, because the display this
+  // suite points at answers nothing and a poll would never reach them.
+  let renderThrew = '';
+  try {
+    a.read('renderApps(); renderTextCard(null); renderVolume(null); renderSystem(null); ' +
+           'applyStandbyMask(); loadGenericSettings("audio", "getSoundSettings", ' +
+           '"setSoundSettings", "card-sound", "sound-body");');
+  } catch (e) { renderThrew = (e && e.message) || String(e); }
+  ok('the renderers pass over a card that is gone', renderThrew === '', renderThrew);
 
   /* ── nothing durable was written ──────────────────────────────────── */
   const stores = a.read(
