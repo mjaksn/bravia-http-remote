@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/mjaksn/bravia-http-remote/actions/workflows/ci.yml/badge.svg)](https://github.com/mjaksn/bravia-http-remote/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/mjaksn/bravia-http-remote)](https://github.com/mjaksn/bravia-http-remote/releases/latest)
 
 A single-page vanilla JS web app for controlling a Sony Bravia TV / professional display over
 your local network. It talks **directly to the TV** using the Bravia HTTP REST API
