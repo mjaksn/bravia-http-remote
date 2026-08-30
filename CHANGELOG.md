@@ -100,7 +100,7 @@ release page.
   what the other sealed, in both directions, because a sealer that checks its
   own work passes just as happily with both halves wrong together. The password
   is asked for rather than taken as an argument, since an argument is visible in
-  `ps`, and it refuses to write into a directory holding a Dockerfile.
+  `ps`, and it refuses to write anywhere under a directory holding a Dockerfile.
 - **`scripts/install.sh`**, which sets the console up as either a systemd
   service or a Docker container, and offers to seal a locked config on the way.
   Every answer has a flag, and `--non-interactive` fails rather than hanging

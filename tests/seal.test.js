@@ -196,7 +196,7 @@ try {
   ok('and refuses at the same number lockbox.js does',
      ceiling.includes(String(L.MAX_ITERATIONS)), ceiling.slice(0, 200));
 
-  // The other half: one round under the ceiling has to be accepted by both.
+  // The other half: the ceiling itself has to be accepted by both.
   const atCeiling = path.join(work, 'at-ceiling.js');
   execFileSync(PY, [path.join(ROOT, 'seal.py'),
                     '--host', SECRET.host, '--psk', SECRET.psk,

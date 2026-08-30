@@ -3,9 +3,10 @@
 # Install Bravia Console, either as a systemd service or as a Docker container,
 # and optionally seal a password-protected deployment config on the way.
 #
-# It asks which, then asks for the display's address, the pre-shared key set on
-# it, the port to serve on, and which of the console's cards this copy should
-# leave out. Every answer can be given as a flag instead, and --non-interactive
+# It asks which, then asks for the display's address, the port to serve on, and
+# which of the console's cards this copy should leave out. The pre-shared key
+# set on the display is asked for only when it is sealing a locked config.
+# Every answer can be given as a flag instead, and --non-interactive
 # refuses to guess rather than hanging on a prompt that nobody is there to
 # answer.
 #
@@ -713,15 +714,26 @@ fi
 
 # == what to do next =========================================================
 
-# `hostname -I` is Linux and GNU. busybox has -i and not -I, and other
-# systems have neither, so this is allowed to come back with nothing.
-#
-# Two things have to be right for that to be harmless. `|| true` keeps
-# `pipefail` from handing a failed `hostname` to `set -e`, which would end a
-# completely successful install here, silently, with no "Done." and a non-zero
-# status. And the fallback tests the value rather than the pipeline, because
-# awk exits 0 on empty input and a `||` after it would never run.
-HOSTADDR="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+# A systemd install bound to one address answers only on that address, so it
+# is the address to print. Asking the machine for its first LAN address there
+# would end a perfectly good install by naming a URL that will not answer,
+# and 127.0.0.1 is a supported answer to the prompt. Everything else, Docker
+# included, is published on every interface, and for those the machine's own
+# address is the useful one.
+if [ "$MODE" = "systemd" ] && [ "$BIND" != "0.0.0.0" ]; then
+    HOSTADDR="$BIND"
+else
+    # `hostname -I` is Linux and GNU. busybox has -i and not -I, and other
+    # systems have neither, so this is allowed to come back with nothing.
+    #
+    # Two things have to be right for that to be harmless. `|| true` keeps
+    # `pipefail` from handing a failed `hostname` to `set -e`, which would
+    # end a completely successful install here, silently, with no "Done."
+    # and a non-zero status. And the fallback tests the value rather than
+    # the pipeline, because awk exits 0 on empty input and a `||` after it
+    # would never run.
+    HOSTADDR="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+fi
 [ -n "$HOSTADDR" ] || HOSTADDR="localhost"
 
 echo

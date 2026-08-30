@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional zero-dependency helper for Bravia Console (Python flavor).
+"""Optional zero-dependency helper for Bravia Console.
 
 Many Bravia displays never answer CORS preflights, and a browser then
 blocks every direct request the app makes to the TV. This script serves
