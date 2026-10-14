@@ -51,6 +51,8 @@ run(async () => {
   await sleep(300);
   ok('polling is a no-op before first setup', a.$('conn-pill').textContent === pillBefore);
 
+  ok('first setup offers a 15 second interval', a.$('cfg-interval').value === '15',
+     a.$('cfg-interval').value);
   a.$('cfg-host').value = '127.0.0.1:1';
   a.$('cfg-psk').value = 'typed-in-key';
   a.$('cfg-interval').value = '9';
@@ -79,6 +81,45 @@ run(async () => {
   ok('key prefilled back into the form', a.$('cfg-psk').value === 'typed-in-key');
   ok('host prefilled back into the form', a.$('cfg-host').value === '127.0.0.1:1');
   a.$('btn-cfg-cancel').click();
+
+  /* ── when a poll may repaint a control ────────────────────────────── */
+  // A slider keeps focus once the drag is over, so focus cannot be what
+  // keeps a poll's hands off it, or a value changed elsewhere never shows.
+  const w = a.win();
+  const doc = w.document;
+  const slider = doc.createElement('input');
+  slider.type = 'range';
+  const sel = doc.createElement('select');
+  sel.innerHTML = '<option>a</option><option>b</option>';
+  doc.body.append(slider, sel);
+  const busy = (el) => w.busy(el);
+  const send = (el, type, Kind = w.Event) =>
+    el.dispatchEvent(new Kind(type, { bubbles: true, cancelable: true }));
+
+  slider.focus();
+  ok('a focused slider nobody has touched is fair game', !busy(slider));
+  send(slider, 'pointerdown', w.PointerEvent);
+  ok('a slider under the pointer is left alone', busy(slider));
+  send(slider, 'pointerup', w.PointerEvent);
+  ok('and for a moment once it is let go', busy(slider));
+  await sleep(a.read('SETTLE_MS') + 100);
+  ok('then repainted, though it still has focus',
+     !busy(slider) && doc.activeElement === slider);
+  send(slider, 'keydown', w.KeyboardEvent);
+  ok('a key on it holds it too', busy(slider));
+  slider.blur();
+  await sleep(a.read('SETTLE_MS') + 100);
+  ok('until focus leaves', !busy(slider));
+
+  sel.focus();
+  send(sel, 'pointerdown', w.PointerEvent);
+  send(sel, 'pointerup', w.PointerEvent);
+  await sleep(a.read('SETTLE_MS') + 100);
+  ok('a select stays held while its list may still be open', busy(sel));
+  send(sel, 'change');
+  await sleep(a.read('SETTLE_MS') + 100);
+  ok('and settles once a choice is made', !busy(sel) && doc.activeElement === sel);
+  slider.remove(); sel.remove();
 
   /* ── the packer ───────────────────────────────────────────────────── */
   const p = app(document.getElementById('packer'));

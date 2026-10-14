@@ -47,7 +47,7 @@ Options:
   --lock               seal a password-protected deployment config
   --no-lock            do not seal one; each browser is asked for the details
   --psk-file FILE      read the display's pre-shared key from this file
-  --interval SECONDS   starting refresh interval when sealing (default 5)
+  --interval SECONDS   starting refresh interval when sealing (default 15)
   --hide CARDS         cards the console should never draw, comma-separated;
                        repeatable, and --hide '' puts every card back. Asked
                        for when there is a terminal; a run with neither keeps
@@ -567,7 +567,7 @@ elif [ "$LOCK" -eq 1 ]; then
     fi
 
     if [ -z "$INTERVAL" ]; then
-        INTERVAL="$(ask "Starting refresh interval in seconds" "5")"
+        INTERVAL="$(ask "Starting refresh interval in seconds" "15")"
     fi
     case "$INTERVAL" in
         ''|*[!0-9]*) die "the refresh interval must be a number, not '$INTERVAL'" ;;

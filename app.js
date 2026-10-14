@@ -35,6 +35,7 @@ let retryTimer = null;
 // can never repaint state that belongs to a fresher connection.
 let epoch = 0;
 let pollInFlight = null;        // epoch of the poll currently running, or null
+let pollAgain = false;          // a forced poll arrived while that one ran
 let rpcId = 1;
 
 const $ = (id) => document.getElementById(id);
@@ -427,7 +428,11 @@ async function pollOnce(force = false) {
   if (document.hidden && !force) return;
   // Skip only if a poll for THIS session is already running; a stale poll
   // from an older epoch must not block (its writes are discarded anyway).
-  if (pollInFlight === my) return;
+  // A forced one is queued instead: it follows a change the running poll
+  // may have read too early to see, and dropping it would leave the old
+  // value showing until the next tick.
+  if (pollInFlight === my) { if (force) pollAgain = true; return; }
+  pollAgain = false;
   pollInFlight = my;
   try {
     let status;
@@ -435,7 +440,7 @@ async function pollOnce(force = false) {
       status = (await rpc('system', 'getPowerStatus', []))[0].status;
     } catch (e) {
       if (my !== epoch) return;
-      if (e.kind === 'auth') { setPill('err', 'AUTH FAILED'); stopPolling(); openSettings(authFailureText()); return; }
+      if (e.kind === 'auth') { pollAgain = false; setPill('err', 'AUTH FAILED'); stopPolling(); openSettings(authFailureText()); return; }
       setPill('err', 'UNREACHABLE');
       return;
     }
@@ -454,11 +459,12 @@ async function pollOnce(force = false) {
       lastActiveFetch = true;
       loadApps();
       if (!irccCodes.length) loadRemoteInfo();
-      refreshSettingsCards();
     }
 
     const fresh = (fn) => (r) => { if (my === epoch) fn(r); };
-    const jobs = [];
+    // Settings ride every tick too: a change made with the TV's own remote
+    // or another app would otherwise never show until a manual refresh.
+    const jobs = [refreshSettingsCards()];
     if (supports('audio', 'getVolumeInformation'))
       jobs.push(rpc('audio', 'getVolumeInformation', [])
         .then(fresh(r => renderVolume(r[0]))).catch(fresh(() => renderVolume(null))));
@@ -473,16 +479,22 @@ async function pollOnce(force = false) {
         .then(fresh(r => renderTextCard(r[0]))).catch(fresh(() => renderTextCard(null))));
     await Promise.all(jobs);
   } finally {
-    if (pollInFlight === my) pollInFlight = null;
+    if (pollInFlight === my) {
+      pollInFlight = null;
+      if (pollAgain) pollOnce(true);
+    }
   }
 }
 
-/* Slower-moving settings, fetched on connect / wake / after edits. */
+/* Picture, sound, speaker and power-extras settings, fetched on every poll
+   tick while the display is on. Resolves once all four cards have settled. */
 function refreshSettingsCards() {
-  loadGenericSettings('video', 'getPictureQualitySettings', 'setPictureQualitySettings', 'card-picture', 'picture-body');
-  loadGenericSettings('audio', 'getSoundSettings', 'setSoundSettings', 'card-sound', 'sound-body');
-  loadGenericSettings('audio', 'getSpeakerSettings', 'setSpeakerSettings', 'card-speaker', 'speaker-body');
-  loadPowerExtras();
+  return Promise.all([
+    loadGenericSettings('video', 'getPictureQualitySettings', 'setPictureQualitySettings', 'card-picture', 'picture-body'),
+    loadGenericSettings('audio', 'getSoundSettings', 'setSoundSettings', 'card-sound', 'sound-body'),
+    loadGenericSettings('audio', 'getSpeakerSettings', 'setSpeakerSettings', 'card-speaker', 'speaker-body'),
+    loadPowerExtras(),
+  ]);
 }
 
 /* Kick a quick refresh shortly after a user action so the UI reflects it. */
@@ -515,10 +527,46 @@ function applyStandbyMask() {
 }
 
 /* Shared guard for every renderer: never tear down DOM the user is
-   interacting with (focused button, select, slider, input). */
+   interacting with (focused button, select, slider, input). Repainting a
+   value in place is a smaller question, answered by busy() below. */
 function interacting(container) {
   const el = document.activeElement;
   return !!container && !!el && el !== document.body && container.contains(el);
+}
+
+/* A slider or select the user is still working with, so a poll must not
+   repaint its value. Focus alone is the wrong test: a slider keeps focus
+   after the drag ends, and skipping every focused control left it stale
+   until the user happened to click elsewhere. A control is busy from the
+   first press or key until its change event, then for SETTLE_MS more so the
+   set request reaches the display before a poll reads the value back. */
+const SETTLE_MS = 2000;
+const settledAt = new WeakMap();   // control → time it settled, Infinity while held
+let heldRange = null;              // slider under a pointer that has not let go
+
+const isValueControl = (el) => el instanceof HTMLSelectElement ||
+  (el instanceof HTMLInputElement && el.type === 'range');
+
+function busy(el) {
+  return !!el && Date.now() - (settledAt.get(el) ?? -Infinity) < SETTLE_MS;
+}
+function holdControl(e) {
+  if (!isValueControl(e.target)) return;
+  settledAt.set(e.target, Infinity);
+  if (e.type === 'pointerdown' && e.target.type === 'range') heldRange = e.target;
+}
+function settleControl(el) {
+  if (isValueControl(el)) settledAt.set(el, Date.now());
+}
+document.addEventListener('pointerdown', holdControl, true);
+document.addEventListener('keydown', holdControl, true);
+document.addEventListener('change', (e) => settleControl(e.target), true);
+document.addEventListener('focusout', (e) => settleControl(e.target), true);
+// A slider can be let go without changing value, so no change event comes.
+// A select is different: the pointer is up while its list is still open,
+// so only change or focusout settles one.
+for (const type of ['pointerup', 'pointercancel']) {
+  document.addEventListener(type, () => { settleControl(heldRange); heldRange = null; }, true);
 }
 
 function toast(msg, ok = false) {
@@ -636,33 +684,61 @@ function fieldRow(label, control) {
 const POWER_SAVE_MODES = ['off', 'low', 'high', 'pictureOff'];
 const LED_MODES = ['Demo', 'AutoBrightnessAdjust', 'Dark', 'SimpleResponse', 'Off'];
 
-/* Fetched only from refreshSettingsCards (connect / wake / manual refresh /
-   after an edit), never per poll tick. */
+/* Fetched from refreshSettingsCards, once per poll tick. */
 async function loadPowerExtras() {
   const my = epoch;
   // Asked before the requests rather than after them: a power card the
   // deployment left out should cost nothing, not two RPCs whose answers
   // have nowhere to go.
   if (!$('card-power')) return;
+  // [label, value, options, set]; value stays null when the read failed.
   const rows = [];
   if (supports('system', 'getPowerSavingMode') && supports('system', 'setPowerSavingMode')) {
+    let mode = null;
     try {
-      const mode = (await rpc('system', 'getPowerSavingMode', []))[0].mode;
-      rows.push(fieldRow('power saving', makeSelect(POWER_SAVE_MODES, mode, v =>
-        guard(rpc('system', 'setPowerSavingMode', [{ mode: v }]), 'Power saving: ' + v))));
-    } catch { /* unavailable right now, row omitted */ }
+      mode = (await rpc('system', 'getPowerSavingMode', []))[0].mode;
+    } catch { /* unavailable right now */ }
+    rows.push(['power saving', mode, POWER_SAVE_MODES, v =>
+      guard(rpc('system', 'setPowerSavingMode', [{ mode: v }]), 'Power saving: ' + v)]);
   }
   if (supports('system', 'getLEDIndicatorStatus') && supports('system', 'setLEDIndicatorStatus')) {
+    let mode = null;
     try {
-      const led = (await rpc('system', 'getLEDIndicatorStatus', []))[0];
-      rows.push(fieldRow('led indicator', makeSelect(LED_MODES, led.mode, v =>
-        guard(rpc('system', 'setLEDIndicatorStatus', [{ mode: v, status: 'true' }]),
-          'LED mode: ' + v))));
-    } catch { /* unavailable right now, row omitted */ }
+      mode = (await rpc('system', 'getLEDIndicatorStatus', []))[0].mode;
+    } catch { /* unavailable right now */ }
+    rows.push(['led indicator', mode, LED_MODES, v =>
+      guard(rpc('system', 'setLEDIndicatorStatus', [{ mode: v, status: 'true' }]),
+        'LED mode: ' + v)]);
   }
   if (my !== epoch) return;
   const extras = $('power-extras');    // fresh lookup: never a detached node
-  if (extras && !interacting(extras)) extras.replaceChildren(...rows);
+  if (!extras) return;
+  // Built in full last time: repaint the values in place, so a select the
+  // user just used keeps its focus, and a read that failed this once leaves
+  // its row as it was rather than taking it away until the next tick.
+  // Otherwise rebuild with the rows that could be read, but not under the
+  // user, and only call it built in full if none was missing.
+  const shape = rows.map(([label]) => label).join('|');
+  if (extras.dataset.shape === shape) {
+    extras.querySelectorAll('select').forEach((sel, i) => {
+      if (rows[i][1] != null && !busy(sel)) setSelectValue(sel, rows[i][1]);
+    });
+  } else if (!interacting(extras)) {
+    const read = rows.filter(([, value]) => value != null);
+    extras.dataset.shape = read.length === rows.length ? shape : '';
+    extras.replaceChildren(...read.map(([label, value, options, set]) =>
+      fieldRow(label, makeSelect(options, value, set))));
+  }
+}
+
+/* Shows a value the TV reports even when it is not one this console lists. */
+function setSelectValue(sel, value) {
+  if (![...sel.options].some(o => o.value === value)) {
+    const opt = document.createElement('option');
+    opt.value = value; opt.textContent = value;
+    sel.insertBefore(opt, sel.firstChild);
+  }
+  sel.value = value;
 }
 
 function makeSelect(options, current, onChange) {
@@ -754,18 +830,21 @@ function renderVolume(targets) {
   $('volume-sub').textContent = 'audio.getVolumeInformation';
   const body = $('volume-body');
 
-  // While the user is on any control in this card (slider mid-drag, +/− or
+  // While the user is on any control in this card (slider focused, +/− or
   // mute button focused), update values in place instead of rebuilding:
-  // a rebuild would destroy the element they're interacting with.
+  // a rebuild would destroy the element they're interacting with. The
+  // slider itself is left alone only while busy() says it is in use.
   if (interacting(body)) {
     const rows = body.querySelectorAll('.vol-row');
     targets.forEach((t, i) => {
       const row = rows[i];
       if (!row) return;
       const val = row.querySelector('.vol-val');
-      if (val) val.textContent = t.volume;
       const slider = row.querySelector('input[type="range"]');
-      if (slider && document.activeElement !== slider) slider.value = t.volume;
+      if (!busy(slider)) {         // not mid-drag, nor only just let go
+        if (val) val.textContent = t.volume;
+        if (slider) slider.value = t.volume;
+      }
       const mute = row.querySelector('.mute-btn');
       if (mute) {
         mute.classList.toggle('muted', !!t.mute);
@@ -1136,17 +1215,17 @@ async function loadGenericSettings(service, getter, setter, cardId, bodyId) {
 
   const body = $(bodyId);
   // Rows are keyed by target, so rebuild only when the set of settings the TV
-  // reports changes; current values are repainted in place every refresh so a
-  // control the user just used (and still has focus) stays alive and current.
+  // reports changes; current values are repainted in place every poll so a
+  // control the user just used (and may still have focus) stays alive and current.
   const shape = items.map(i => i.target || '').join('|');
   if (body.dataset.shape !== shape && !interacting(body)) {
     body.dataset.shape = shape;
-    buildSettingRows(body, items, service, getter, setter, cardId, bodyId);
+    buildSettingRows(body, items, service, setter);
   }
   paintSettingRows(body, items);
 }
 
-function buildSettingRows(body, items, service, getter, setter, cardId, bodyId) {
+function buildSettingRows(body, items, service, setter) {
   body.innerHTML = '';
   const canSet = supports(service, setter);
 
@@ -1160,11 +1239,10 @@ function buildSettingRows(body, items, service, getter, setter, cardId, bodyId) 
 
     const cands = (item.candidate || []).filter(c => c.isAvailable !== false);
     const numeric = cands.length && cands[0].value == null && cands[0].max != null;
-    // Re-fetch only this card after an edit: nudge() already refreshes the
-    // fast-moving state, and refetching every settings card was ~10 RPCs.
+    // No refetch here: guard() nudges a poll, and the poll repaints this card.
     const apply = (value) => guard(
       rpc(service, setter, [{ settings: [{ target: item.target, value: String(value) }] }]),
-      null).then(() => loadGenericSettings(service, getter, setter, cardId, bodyId));
+      null);
 
     if (numeric) {
       const c = cands[0];
@@ -1191,7 +1269,7 @@ function buildSettingRows(body, items, service, getter, setter, cardId, bodyId) 
   }
 }
 
-/* Value-only update; it never touches the control the user is currently on. */
+/* Value-only update; it never touches a control the user is still busy with. */
 function paintSettingRows(body, items) {
   const byTarget = new Map(items.map(i => [i.target || '', i]));
   for (const row of body.querySelectorAll('.setting-row')) {
@@ -1205,17 +1283,12 @@ function paintSettingRows(body, items) {
     const ctl = slider || sel;
     if (ctl) ctl.disabled = ctl.dataset.noSet === '1' || item.isAvailable === false;
 
-    if (document.activeElement === ctl) continue;   // mid-drag / mid-choice
+    if (busy(ctl)) continue;   // mid-drag / mid-choice, or only just let go
     if (slider) {
       slider.value = Number(item.currentValue);
       if (num) num.textContent = item.currentValue;
     } else if (sel) {
-      if (![...sel.options].some(o => o.value === item.currentValue)) {
-        const opt = document.createElement('option');
-        opt.value = item.currentValue; opt.textContent = item.currentValue;
-        sel.insertBefore(opt, sel.firstChild);
-      }
-      sel.value = item.currentValue;
+      setSelectValue(sel, item.currentValue);
     } else if (num) {
       num.textContent = item.currentValue;
     }
@@ -1373,7 +1446,7 @@ function openSettings(errorMsg) {
         'origin and the address here is informational.'
       : $('proxy-hint').textContent;
   }
-  $('cfg-interval').value = cfg?.interval || 5;
+  $('cfg-interval').value = cfg?.interval || 15;
   $('btn-cfg-cancel').disabled = !cfg;
   const err = $('settings-error');
   if (errorMsg) { err.textContent = errorMsg; err.hidden = false; }
@@ -1383,7 +1456,7 @@ function openSettings(errorMsg) {
 
 function initSettingsDialog() {
   $('settings-form').addEventListener('submit', (e) => {
-    const interval = Math.max(1, parseInt($('cfg-interval').value, 10) || 5);
+    const interval = Math.max(1, parseInt($('cfg-interval').value, 10) || 15);
     if (deployed()) {
       // Nothing to reconnect for: only the poll cadence can have changed.
       if (cfg) cfg.interval = interval;
@@ -1501,7 +1574,7 @@ function applyUnlockedSecret(secret) {
   // setting this mode still lets the user own.
   cfg = {
     host: String(secret.host || ''),
-    interval: Math.max(1, loadStoredInterval() || parseInt(secret.interval, 10) || 5),
+    interval: Math.max(1, loadStoredInterval() || parseInt(secret.interval, 10) || 15),
   };
   locked = false;
   if ($('unlock-dialog').open) $('unlock-dialog').close();
@@ -1626,7 +1699,7 @@ async function main() {
   initCollapsibleCards();
   $('btn-settings').onclick = () => openSettings();
   $('btn-settings-empty').onclick = () => openSettings();
-  $('btn-refresh').onclick = () => { pollOnce(true); refreshSettingsCards(); };
+  $('btn-refresh').onclick = () => { pollOnce(true); };
   // Optional, all three: each of these lives inside a card, and a card the
   // deployment left out has taken its controls with it.
   $('app-filter')?.addEventListener('input', renderApps);

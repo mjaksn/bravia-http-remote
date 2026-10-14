@@ -259,8 +259,8 @@ def main() -> int:
                         ))
     parser.add_argument("--psk-file",
                         help="read the pre-shared key from this file instead")
-    parser.add_argument("--interval", type=int, default=5,
-                        help="starting refresh interval in seconds (default 5)")
+    parser.add_argument("--interval", type=int, default=15,
+                        help="starting refresh interval in seconds (default 15)")
     parser.add_argument("--hide", action="append", metavar="CARDS",
                         help=(
                             "a card the deployed console should never draw. "
