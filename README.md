@@ -276,7 +276,7 @@ every user on the machine. `--psk` exists for a quick run at your own keyboard
 and is the wrong thing in a script.
 
 `--interval` sets the starting refresh interval in seconds, the same field
-`pack.html` asks for, and defaults to 5. `--iterations` sets the PBKDF2 rounds
+`pack.html` asks for, and defaults to 15. `--iterations` sets the PBKDF2 rounds
 and defaults to 120,000; going below that default warns, and going above two
 million is refused, because the console will not open a file claiming more
 rounds than that.

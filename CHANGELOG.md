@@ -8,6 +8,30 @@ The release workflow lifts the section matching a pushed tag out of this file an
 publishes it as the release notes, so a version with no section here does not get a
 release page.
 
+## [Unreleased]
+
+### Changed
+
+- **The default refresh interval is 15 seconds**, up from 5, in the settings
+  dialog, `pack.html`, `seal.py` and `scripts/install.sh`. Each poll now asks
+  for more, as below. An interval already chosen or sealed is kept.
+
+### Fixed
+
+- **Settings follow the display.** The picture, sound and speaker cards and the
+  power card's extra rows are now fetched on every poll tick, not only on
+  connect, wake, an edit or a manual refresh. A brightness change made with the
+  TV's own remote or another app now shows within one refresh interval. Each
+  tick costs up to five more requests while the display is on.
+- **A slider you have used goes on updating.** A poll used to leave alone any
+  control holding focus, and a slider keeps focus after the drag ends, so a
+  volume or picture slider stopped following the display until something else
+  was clicked. A control is now left alone only while it is in use and for two
+  seconds after.
+- **The poll after a change is no longer dropped** when another poll is still
+  running. It now runs as soon as that one finishes, so a change shows at once
+  rather than at the next tick.
+
 ## [1.3.0] - 2026-08-30
 
 ### Added
@@ -172,6 +196,7 @@ what it does as of this version rather than an account of how it got here.
   systems, and a tagged release built from a proven artefact with notes taken
   from this file.
 
+[Unreleased]: https://github.com/mjaksn/bravia-http-remote/compare/v1.3.0...HEAD
 [1.3.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.3.0
 [1.2.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.2.0
 [1.1.0]: https://github.com/mjaksn/bravia-http-remote/releases/tag/v1.1.0
