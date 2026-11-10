@@ -28,7 +28,7 @@
 # cooldown for this: the cooldown reads the version, and a rebuilt digest is
 # the same version it was yesterday. This one was 23 days old when it was
 # pinned.
-FROM python:3.15.0rc3-slim@sha256:a3af3d230522dd52f7f2191b39e1892912dbcb0c8dee22afdec3dc83baf0f549
+FROM python:3.15.1-slim@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
 
 LABEL org.opencontainers.image.title="Bravia Console" \
       org.opencontainers.image.description="Single-page controller for Sony Bravia displays over the Bravia HTTP REST API" \
