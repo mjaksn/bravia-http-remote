@@ -15,19 +15,20 @@
 # only, so there are no dependencies to install, nothing to pin in a lock file
 # and no wheel to compile. The base image digest is the only pin here.
 #
-# A patch tag rather than the rolling 3.14-slim, and that is not fussiness.
+# A patch tag rather than the rolling 3.15-slim, and that is not fussiness.
 # The rolling tags are rebuilt every few days, so whatever digest they point
 # at is always a few days old, and nothing that young may be used here.
 #
 # A patch tag is quieter, but it is not still: while it is the newest of its
-# line it is rebuilt too. So the newest patch is exactly the one whose digest
-# keeps moving, which is how 3.14.7-slim was taken here on a digest a day old.
-# Take the patch behind the newest, which has stopped.
+# line it is rebuilt too. So the newest patch is the one whose digest may still
+# be moving, which is how 3.14.7-slim was taken here on a digest a day old.
+# The patch behind the newest has stopped for good. The newest is fine too once
+# its digest has gone a week without a push, which is the check that counts.
 #
 # Check the age rather than assuming it, and do not lean on Dependabot's
 # cooldown for this: the cooldown reads the version, and a rebuilt digest is
-# the same version it was yesterday. This one was 23 days old when it was
-# pinned.
+# the same version it was yesterday. This one is the newest 3.15 patch, and its
+# digest was 14 days past its last push when it was pinned.
 FROM python:3.15.2-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 LABEL org.opencontainers.image.title="Bravia Console" \
